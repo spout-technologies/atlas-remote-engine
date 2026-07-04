@@ -36,8 +36,10 @@ jobs:
       fail-fast: false
       matrix:
         job:
-          # arm64-first for the initial green build; add x86_64 (macos-15-intel) once green.
+          # Both Mac arches, each on its native GitHub-hosted runner (concurrent).
+          # aarch64 -> macos-14 (Apple Silicon); x86_64 -> macos-13 (last Intel image).
           - { target: aarch64-apple-darwin, os: macos-14, arch: aarch64, vcpkg-triplet: arm64-osx, extra-build-args: "--screencapturekit" }
+          - { target: x86_64-apple-darwin,  os: macos-13, arch: x86_64,  vcpkg-triplet: x64-osx,   extra-build-args: "--screencapturekit" }
     runs-on: ${{ matrix.job.os }}
     steps:
       - name: Export GitHub Actions cache environment variables
@@ -134,15 +136,15 @@ jobs:
       - name: Show versions
         run: rustup show && cargo -V && clang --version || true
 
-      - name: Build Atlas Remote (min-macOS 12.3, arm64)
+      - name: Build Atlas Remote (min-macOS 12.3, ${{ matrix.job.arch }})
         run: |
-          if [ "${{ matrix.job.target }}" = "aarch64-apple-darwin" ]; then
-            MIN="12.3"
-            sed -i -e "s/MACOSX_DEPLOYMENT_TARGET\=[0-9]*.[0-9]*/MACOSX_DEPLOYMENT_TARGET=${MIN}/" build.py
-            sed -i -e "s/platform :osx, '.*'/platform :osx, '${MIN}'/" flutter/macos/Podfile
-            sed -i -e "s/osx_minimum_system_version = \"[0-9]*.[0-9]*\"/osx_minimum_system_version = \"${MIN}\"/" Cargo.toml
-            sed -i -e "s/MACOSX_DEPLOYMENT_TARGET = [0-9]*.[0-9]*;/MACOSX_DEPLOYMENT_TARGET = ${MIN};/" flutter/macos/Runner.xcodeproj/project.pbxproj
-          fi
+          # Both arches ship --screencapturekit, whose framework floor is macOS 12.3,
+          # so pin the deployment target to 12.3 across all four build inputs (upstream default is 10.14).
+          MIN="12.3"
+          sed -i -e "s/MACOSX_DEPLOYMENT_TARGET\=[0-9]*.[0-9]*/MACOSX_DEPLOYMENT_TARGET=${MIN}/" build.py
+          sed -i -e "s/platform :osx, '.*'/platform :osx, '${MIN}'/" flutter/macos/Podfile
+          sed -i -e "s/osx_minimum_system_version = \"[0-9]*.[0-9]*\"/osx_minimum_system_version = \"${MIN}\"/" Cargo.toml
+          sed -i -e "s/MACOSX_DEPLOYMENT_TARGET = [0-9]*.[0-9]*;/MACOSX_DEPLOYMENT_TARGET = ${MIN};/" flutter/macos/Runner.xcodeproj/project.pbxproj
           ./build.py --flutter --hwcodec --unix-file-copy-paste ${{ matrix.job.extra-build-args }}
 
       - name: Codesign (hardened runtime) + signed DMG
