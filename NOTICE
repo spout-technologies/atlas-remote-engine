@@ -1,0 +1,11 @@
+Atlas Remote
+Copyright (C) 2026 Spout Technologies (Pty) Ltd.
+
+This product is a fork of RustDesk (https://github.com/rustdesk/rustdesk),
+Copyright (C) the RustDesk authors / Purslane Ltd, licensed AGPL-3.0.
+Forked at tag 1.4.8 (commit 3c574a41821170f89f38141a493e127145dbf82d);
+submodule hbb_common at 387603f47cbb15c0d3dc3d67ae3396d3eb707daf (vendored).
+
+Modifications by Spout Technologies: rebrand to "Atlas Remote" (name, bundle,
+icons), self-hosted relay configuration, and CI signing. All modifications remain
+under AGPL-3.0-or-later. Corresponding source is published in this repository.

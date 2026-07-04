@@ -1,0 +1,188 @@
+# Atlas Remote — macOS build + Developer ID sign + notarize (arm64 first).
+# Adapted from RustDesk's proven build-for-macOS job (flutter-build.yml), rebranded
+# to "Atlas Remote.app" and wired to THIS repo's signing secrets:
+#   APPLE_DEVELOPER_ID_APP_P12_BASE64 / _PASSWORD, ASC_API_KEY_ID / _ISSUER_ID /
+#   _KEY_P8_BASE64, KEYCHAIN_PASSWORD  (+ vars APPLE_TEAM_ID, MACOS_BUNDLE_ID).
+# The relay + name + icons are baked into the source (this fork), not env vars.
+name: atlas-remote-macos
+
+on:
+  workflow_dispatch:
+    inputs:
+      arch:
+        description: "Target arch"
+        type: choice
+        default: aarch64
+        options: [aarch64, x86_64]
+  push:
+    tags: ["v*"]
+
+env:
+  MAC_RUST_VERSION: "1.81"
+  FLUTTER_VERSION: "3.24.5"
+  VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+  VERSION: "1.4.8"
+
+jobs:
+  generate-bridge:
+    uses: ./.github/workflows/bridge.yml
+    secrets: inherit
+
+  build-for-macOS:
+    name: ${{ matrix.job.target }}
+    needs: [generate-bridge]
+    strategy:
+      fail-fast: false
+      matrix:
+        job:
+          # arm64-first for the initial green build; add x86_64 (macos-15-intel) once green.
+          - { target: aarch64-apple-darwin, os: macos-14, arch: aarch64, vcpkg-triplet: arm64-osx, extra-build-args: "--screencapturekit" }
+    runs-on: ${{ matrix.job.os }}
+    steps:
+      - name: Export GitHub Actions cache environment variables
+        uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Import the Developer ID Application cert
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APP_P12_BASE64 }}
+          p12-password: ${{ secrets.APPLE_DEVELOPER_ID_APP_P12_PASSWORD }}
+          keychain: atlasremote
+          keychain-password: ${{ secrets.KEYCHAIN_PASSWORD }}
+
+      - name: Resolve codesign identity
+        run: |
+          security default-keychain -s atlasremote.keychain
+          IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed -E 's/.*"(Developer ID Application:[^"]+)".*/\1/')
+          echo "Codesign identity: $IDENTITY"
+          echo "CODESIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Prepare ASC API key (notarytool)
+        run: |
+          mkdir -p "$RUNNER_TEMP/asc"
+          echo "${{ secrets.ASC_API_KEY_P8_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/asc/AuthKey.p8"
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/asc/AuthKey.p8" >> "$GITHUB_ENV"
+
+      - name: Install build runtime
+        run: |
+          brew install llvm create-dmg
+          command -v pkg-config >/dev/null || brew install pkg-config
+
+      - name: Install NASM 2.16.x
+        run: |
+          wget https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/macosx/nasm-2.16.03-macosx.zip
+          unzip nasm-2.16.03-macosx.zip
+          sudo cp nasm-2.16.03/nasm /usr/local/bin/nasm
+          nasm --version
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Patch flutter (3.24.5 dropdown)
+        run: |
+          cd "$(dirname "$(dirname "$(which flutter)")")"
+          git apply ${{ github.workspace }}/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff
+
+      - name: Workaround for flutter issue 133533
+        run: |
+          cd "$(dirname "$(which flutter)")"
+          sed -i -e 's/_setFramesEnabledState(false);/\/\/_setFramesEnabledState(false);/g' ../packages/flutter/lib/src/scheduler/binding.dart
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.MAC_RUST_VERSION }}
+          targets: ${{ matrix.job.target }}
+          components: "rustfmt"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: ${{ matrix.job.os }}
+
+      - name: Restore bridge files
+        uses: actions/download-artifact@v4
+        with:
+          name: bridge-artifact
+          path: ./
+
+      - name: Setup vcpkg (binary cache)
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        run: |
+          if ! $VCPKG_ROOT/vcpkg install --x-install-root="$VCPKG_ROOT/installed"; then
+            find "${VCPKG_ROOT}/" -name "*.log" -exec sh -c 'echo "== {} =="; cat "{}"' \;
+            exit 1
+          fi
+
+      - name: Show versions
+        run: rustup show && cargo -V && clang --version || true
+
+      - name: Build Atlas Remote (min-macOS 12.3, arm64)
+        run: |
+          if [ "${{ matrix.job.target }}" = "aarch64-apple-darwin" ]; then
+            MIN="12.3"
+            sed -i -e "s/MACOSX_DEPLOYMENT_TARGET\=[0-9]*.[0-9]*/MACOSX_DEPLOYMENT_TARGET=${MIN}/" build.py
+            sed -i -e "s/platform :osx, '.*'/platform :osx, '${MIN}'/" flutter/macos/Podfile
+            sed -i -e "s/osx_minimum_system_version = \"[0-9]*.[0-9]*\"/osx_minimum_system_version = \"${MIN}\"/" Cargo.toml
+            sed -i -e "s/MACOSX_DEPLOYMENT_TARGET = [0-9]*.[0-9]*;/MACOSX_DEPLOYMENT_TARGET = ${MIN};/" flutter/macos/Runner.xcodeproj/project.pbxproj
+          fi
+          ./build.py --flutter --hwcodec --unix-file-copy-paste ${{ matrix.job.extra-build-args }}
+
+      - name: Codesign (hardened runtime) + signed DMG
+        run: |
+          APP="./flutter/build/macos/Build/Products/Release/Atlas Remote.app"
+          security default-keychain -s atlasremote.keychain
+          security unlock-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" atlasremote.keychain
+          CREATE_DMG="$(readlink -f "$(command -v create-dmg)")"
+          sed -i -e 's/MAXIMUM_UNMOUNTING_ATTEMPTS=3/MAXIMUM_UNMOUNTING_ATTEMPTS=7/' "$CREATE_DMG"
+          codesign --force --options runtime -s "$CODESIGN_IDENTITY" --deep --strict "$APP" -vvv
+          rm -f *.dmg || true
+          create-dmg --icon "Atlas Remote.app" 200 190 --hide-extension "Atlas Remote.app" \
+            --window-size 800 400 --app-drop-link 600 185 \
+            "AtlasRemote-${VERSION}-${{ matrix.job.arch }}.dmg" "$APP"
+          codesign --force --options runtime -s "$CODESIGN_IDENTITY" --deep --strict "AtlasRemote-${VERSION}-${{ matrix.job.arch }}.dmg" -vvv
+
+      - name: Notarize + staple (notarytool, ASC API key)
+        run: |
+          DMG="AtlasRemote-${VERSION}-${{ matrix.job.arch }}.dmg"
+          xcrun notarytool submit "$DMG" \
+            --key "$ASC_KEY_PATH" \
+            --key-id "${{ secrets.ASC_API_KEY_ID }}" \
+            --issuer "${{ secrets.ASC_API_ISSUER_ID }}" --wait
+          xcrun stapler staple "$DMG"
+          xcrun stapler validate "$DMG"
+          shasum -a 256 "$DMG" > "$DMG.sha256"
+
+      - name: Upload signed DMG (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: AtlasRemote-macos-${{ matrix.job.arch }}
+          path: |
+            AtlasRemote-${{ env.VERSION }}-${{ matrix.job.arch }}.dmg
+            AtlasRemote-${{ env.VERSION }}-${{ matrix.job.arch }}.dmg.sha256
+
+      - name: Publish signed DMG to Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          files: |
+            AtlasRemote-${{ env.VERSION }}-${{ matrix.job.arch }}.dmg
+            AtlasRemote-${{ env.VERSION }}-${{ matrix.job.arch }}.dmg.sha256
