@@ -1,0 +1,144 @@
+# Atlas Remote — Windows x86_64 build (Flutter).
+#
+# Best-effort PORTABLE build: produces flutter/build/windows/x64/runner/Release as
+# a zip (no Inno/Wix packer via --skip-portable-pack; no code-signing — a Windows
+# code-signing cert is not yet configured, so SmartScreen will warn on first run).
+#
+# Modelled on RustDesk's build-for-windows-flutter + this repo's
+# atlas-remote-macos.yml (same generate-bridge job, VERSION, vcpkg/flutter/rust
+# pins). Triggered by a `win-v*` tag so it does NOT re-fire the macOS `v*` build,
+# or manually via workflow_dispatch. Windows CI for a RustDesk fork is finicky
+# (vcpkg static + CRT + LLVM/bindgen); treat the first green as the goal.
+name: atlas-remote-windows
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["win-v*"]
+
+env:
+  RUST_VERSION: "1.81"
+  FLUTTER_VERSION: "3.24.5"
+  LLVM_VERSION: "16.0.6"
+  VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+  VCPKG_DEFAULT_TRIPLET: "x64-windows-static"
+  VCPKG_DEFAULT_HOST_TRIPLET: "x64-windows-static"
+  VERSION: "1.5.0"
+
+jobs:
+  generate-bridge:
+    uses: ./.github/workflows/bridge.yml
+    secrets: inherit
+
+  build-for-windows:
+    name: windows-x86_64
+    needs: [generate-bridge]
+    runs-on: windows-2022
+    steps:
+      - name: Export GitHub Actions cache environment variables
+        uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install LLVM and Clang (bindgen)
+        uses: KyleMayes/install-llvm-action@v2
+        with:
+          version: ${{ env.LLVM_VERSION }}
+
+      - name: Install NASM
+        uses: ilammy/setup-nasm@v1
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Patch flutter (3.24.5 dropdown)
+        shell: bash
+        run: |
+          cd "$(dirname "$(dirname "$(which flutter)")")"
+          git apply "${GITHUB_WORKSPACE}/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff"
+
+      - name: Workaround for flutter issue 133533
+        shell: bash
+        run: |
+          cd "$(dirname "$(which flutter)")"
+          sed -i -e 's/_setFramesEnabledState(false);/\/\/_setFramesEnabledState(false);/g' ../packages/flutter/lib/src/scheduler/binding.dart
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: x86_64-pc-windows-msvc
+          components: "rustfmt"
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: windows-2022
+
+      - name: Restore bridge files
+        uses: actions/download-artifact@v4
+        with:
+          name: bridge-artifact
+          path: ./
+
+      - name: Setup vcpkg (binary cache)
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        shell: bash
+        run: |
+          if ! "$VCPKG_ROOT/vcpkg" install --x-install-root="$VCPKG_ROOT/installed"; then
+            find "${VCPKG_ROOT}/" -name "*.log" -exec sh -c 'echo "== {} =="; cat "{}"' \;
+            exit 1
+          fi
+
+      - name: Show versions
+        shell: bash
+        run: rustup show && cargo -V && clang --version && flutter --version || true
+
+      - name: Build Atlas Remote (flutter, x86_64, portable no-pack)
+        shell: bash
+        run: |
+          python build.py --portable --skip-portable-pack --hwcodec --flutter
+
+      - name: Package portable zip
+        shell: bash
+        run: |
+          REL="flutter/build/windows/x64/runner/Release"
+          if [ ! -d "$REL" ]; then
+            echo "Release dir missing: $REL"; ls -R flutter/build/windows 2>/dev/null || true; exit 1
+          fi
+          ZIP="AtlasRemote-${VERSION}-x86_64-windows.zip"
+          powershell -Command "Compress-Archive -Path '${REL}/*' -DestinationPath '${ZIP}' -Force"
+          (sha256sum "$ZIP" || shasum -a 256 "$ZIP") > "$ZIP.sha256"
+          ls -la "$ZIP" "$ZIP.sha256"
+
+      - name: Upload portable zip (artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: AtlasRemote-windows-x86_64
+          path: |
+            AtlasRemote-${{ env.VERSION }}-x86_64-windows.zip
+            AtlasRemote-${{ env.VERSION }}-x86_64-windows.zip.sha256
+
+      - name: Publish to Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          files: |
+            AtlasRemote-${{ env.VERSION }}-x86_64-windows.zip
+            AtlasRemote-${{ env.VERSION }}-x86_64-windows.zip.sha256
