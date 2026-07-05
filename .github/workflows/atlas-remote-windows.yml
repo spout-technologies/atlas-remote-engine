@@ -11,6 +11,9 @@
 # (vcpkg static + CRT + LLVM/bindgen); treat the first green as the goal.
 name: atlas-remote-windows
 
+permissions:
+  contents: write
+
 on:
   workflow_dispatch:
   push:

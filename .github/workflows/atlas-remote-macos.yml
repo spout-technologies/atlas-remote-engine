@@ -6,6 +6,9 @@
 # The relay + name + icons are baked into the source (this fork), not env vars.
 name: atlas-remote-macos
 
+permissions:
+  contents: write
+
 on:
   workflow_dispatch:
     inputs:
