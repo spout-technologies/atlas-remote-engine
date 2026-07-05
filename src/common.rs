@@ -2085,21 +2085,69 @@ pub fn load_custom_client() {
     #[cfg(debug_assertions)]
     if let Ok(data) = std::fs::read_to_string("./custom.txt") {
         read_custom_client(data.trim());
+        apply_atlas_client_defaults();
         return;
     }
     let Some(path) = std::env::current_exe().map_or(None, |x| x.parent().map(|x| x.to_path_buf()))
     else {
+        apply_atlas_client_defaults();
         return;
     };
     #[cfg(target_os = "macos")]
     let path = path.join("../Resources");
     let path = path.join("custom.txt");
     if path.is_file() {
-        let Ok(data) = std::fs::read_to_string(&path) else {
+        if let Ok(data) = std::fs::read_to_string(&path) {
+            read_custom_client(&data.trim());
+        } else {
             log::error!("Failed to read custom client config");
-            return;
-        };
-        read_custom_client(&data.trim());
+        }
+    }
+    apply_atlas_client_defaults();
+}
+
+/// Atlas Remote de-RustDesk feature-gate defaults, baked in source.
+///
+/// This fork bakes its custom-client config into the source tree (relay,
+/// name, icons — see the CI workflow comment) rather than shipping RustDesk's
+/// signed `custom.txt`, so the built-in "disable/hide" options are seeded here
+/// instead of via that channel. Values are written as *defaults*: a real
+/// `custom.txt` (loaded just above) or a user override already present in the
+/// maps is never clobbered, so this is additive and non-destructive.
+///
+/// Effect (all lever-(i), zero widget surgery):
+///   - `disable-installation`      → hides the Windows install/upgrade cards
+///   - `hide-help-cards`           → hides the permission/help/nag cards
+///   - `hide-network-settings`     → hides the Network settings tab
+///   - `hide-server/proxy/websocket-settings` → hides those panels
+/// `mainIsUsingPublicServer()` is already false because the relay is baked
+/// (PROD_RENDEZVOUS_SERVER / RENDEZVOUS_SERVERS), which suppresses the
+/// pricing / "setup your server" upsell without any flag.
+fn apply_atlas_client_defaults() {
+    // Top-level HARD_SETTINGS flags (read by config::is_disable_*()).
+    {
+        let mut hard = config::HARD_SETTINGS.write().unwrap();
+        for (k, v) in [("disable-installation", "Y")] {
+            hard.entry(k.to_owned()).or_insert_with(|| v.to_owned());
+        }
+    }
+    // BUILTIN_SETTINGS flags (read by Flutter via mainGetBuildinOption()).
+    {
+        use config::keys::*;
+        let mut builtin = config::BUILTIN_SETTINGS.write().unwrap();
+        for (k, v) in [
+            (OPTION_HIDE_HELP_CARDS, "Y"),
+            (OPTION_HIDE_NETWORK_SETTINGS, "Y"),
+            (OPTION_HIDE_SERVER_SETTINGS, "Y"),
+            (OPTION_HIDE_PROXY_SETTINGS, "Y"),
+            (OPTION_HIDE_WEBSOCKET_SETTINGS, "Y"),
+            // Hides the "Powered by RustDesk" badge on the home page.
+            (OPTION_HIDE_POWERED_BY_ME, "Y"),
+        ] {
+            builtin
+                .entry(k.to_owned())
+                .or_insert_with(|| v.to_owned());
+        }
     }
 }
 

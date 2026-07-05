@@ -152,8 +152,17 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/
+    - assets/fonts/
 
   fonts:
+    # Atlas wordmark/mono font (design tokens/fonts.css). Inter (body) and
+    # Plus Jakarta Sans (display) are wired by family name in MyTheme but not
+    # bundled here yet: the design export ships them as .woff2, which Flutter
+    # cannot load. Add their .ttf/.otf under assets/fonts/ and declare the
+    # 'Inter' / 'Plus Jakarta Sans' families here to complete the type system.
+    - family: JetBrains Mono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono.ttf
     - family: GestureIcons
       fonts:
         - asset: assets/gestures.ttf

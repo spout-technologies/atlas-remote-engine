@@ -433,7 +433,9 @@ class LoginWidgetUserPass extends StatelessWidget {
                 width: 200,
                 child: Obx(() => ElevatedButton(
                       child: Text(
-                        translate('Login'),
+                        // Label-only relabel; the OIDC/account flow underneath
+                        // is unchanged (Atlas SSO wiring is a separate track).
+                        translate('Sign in with Atlas'),
                         style: TextStyle(fontSize: 16),
                       ),
                       onPressed:

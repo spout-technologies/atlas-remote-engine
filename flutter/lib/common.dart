@@ -247,21 +247,34 @@ class ColorThemeExtension extends ThemeExtension<ColorThemeExtension> {
   }
 }
 
+// Atlas OS type families (design tokens/fonts.css). Inter = body/UI,
+// Plus Jakarta Sans = display/headings, JetBrains Mono = wordmark/mono.
+// Only JetBrains Mono is currently bundled (see flutter/assets/fonts +
+// pubspec.yaml); 'Inter' resolves to the platform default until its .ttf
+// is added, which is a safe no-op fallback rather than a build break.
+const String kAtlasBodyFont = 'Inter';
+const String kAtlasDisplayFont = 'Plus Jakarta Sans';
+const String kAtlasMonoFont = 'JetBrains Mono';
+
 class MyTheme {
   MyTheme._();
 
-  static const Color grayBg = Color(0xFFEFEFF2);
-  static const Color accent = Color(0xFF0071FF);
-  static const Color accent50 = Color(0x770071FF);
-  static const Color accent80 = Color(0xAA0071FF);
+  // Atlas OS brand palette (design tokens: brand-500 #6ea924 green,
+  // sage surfaces #f7f9f6/#eaeee7, ink #1C1917). `accent` is the single
+  // master accent referenced across the UI, so retargeting it to Atlas
+  // green rebrands the whole app in one place.
+  static const Color grayBg = Color(0xFFEAEEE7); // sage cream (surface-100)
+  static const Color accent = Color(0xFF6EA924); // Atlas green (brand-500)
+  static const Color accent50 = Color(0x776EA924);
+  static const Color accent80 = Color(0xAA6EA924);
   static const Color canvasColor = Color(0xFF212121);
-  static const Color border = Color(0xFFCCCCCC);
-  static const Color idColor = Color(0xFF00B6F0);
-  static const Color darkGray = Color.fromARGB(255, 148, 148, 148);
-  static const Color cmIdColor = Color(0xFF21790B);
-  static const Color dark = Colors.black87;
-  static const Color button = Color(0xFF2C8CFF);
-  static const Color hoverBorder = Color(0xFF999999);
+  static const Color border = Color(0xFFD1D6CD); // sage line (surface-300)
+  static const Color idColor = Color(0xFF426516); // deep Atlas green (brand-700)
+  static const Color darkGray = Color.fromARGB(255, 133, 133, 133); // ink-500
+  static const Color cmIdColor = Color(0xFF426516);
+  static const Color dark = Color(0xFF1C1917); // Atlas ink (ink-900)
+  static const Color button = Color(0xFF6EA924);
+  static const Color hoverBorder = Color(0xFFC7CDC2); // sage deep border
 
   // ListTile
   static const ListTileThemeData listTileTheme = ListTileThemeData(
@@ -374,9 +387,15 @@ class MyTheme {
   static ThemeData lightTheme = ThemeData(
     // https://stackoverflow.com/questions/77537315/after-upgrading-to-flutter-3-16-the-app-bar-background-color-button-size-and
     useMaterial3: false,
+    // Atlas body font. NOTE: the Inter/Plus Jakarta Sans .ttf files are not
+    // bundled yet (design export ships .woff2, which Flutter cannot load), so
+    // this resolves to the platform default until the .ttf assets are added to
+    // flutter/assets/fonts + declared in pubspec.yaml. Wiring the family name
+    // now means the app picks Inter up automatically once the fonts land.
+    fontFamily: kAtlasBodyFont,
     brightness: Brightness.light,
-    hoverColor: Color.fromARGB(255, 224, 224, 224),
-    scaffoldBackgroundColor: Colors.white,
+    hoverColor: Color.fromARGB(255, 234, 238, 231),
+    scaffoldBackgroundColor: Color(0xFFF7F9F6), // sage page (surface-50)
     dialogBackgroundColor: Colors.white,
     appBarTheme: AppBarTheme(
       shadowColor: Colors.transparent,
@@ -454,7 +473,7 @@ class MyTheme {
         style:
             MenuStyle(backgroundColor: MaterialStatePropertyAll(Colors.white))),
     colorScheme: ColorScheme.light(
-        primary: Colors.blue, secondary: accent, background: grayBg),
+        primary: accent, secondary: accent, background: grayBg),
     popupMenuTheme: PopupMenuThemeData(
         color: Colors.white,
         shape: RoundedRectangleBorder(
@@ -472,6 +491,7 @@ class MyTheme {
   );
   static ThemeData darkTheme = ThemeData(
     useMaterial3: false,
+    fontFamily: kAtlasBodyFont, // see lightTheme note re: bundling the .ttf
     brightness: Brightness.dark,
     hoverColor: Color.fromARGB(255, 45, 46, 53),
     scaffoldBackgroundColor: Color(0xFF18191E),
@@ -562,7 +582,7 @@ class MyTheme {
         style: MenuStyle(
             backgroundColor: MaterialStatePropertyAll(Color(0xFF121212)))),
     colorScheme: ColorScheme.dark(
-      primary: Colors.blue,
+      primary: accent,
       secondary: accent,
       background: Color(0xFF24252B),
     ),
@@ -3713,7 +3733,7 @@ Widget loadPowered(BuildContext context) {
     cursor: SystemMouseCursors.click,
     child: GestureDetector(
       onTap: () {
-        launchUrl(Uri.parse('https://rustdesk.com'));
+        launchUrl(Uri.parse('https://atlasos.work'));
       },
       child: Opacity(
           opacity: 0.5,
@@ -3729,9 +3749,12 @@ Widget loadPowered(BuildContext context) {
   ).marginOnly(top: 6);
 }
 
-const _kDefaultLogoAsset = 'assets/logo.png';
-const _kLightLogoAsset = 'assets/logo_light.png';
-const _kDarkLogoAsset = 'assets/logo_dark.png';
+// Atlas Remote wordmark. Shipped as vector SVG (design export) rather than the
+// upstream PNGs: logo_light = dark-ink wordmark for light surfaces, logo_dark =
+// white wordmark for dark surfaces.
+const _kDefaultLogoAsset = 'assets/logo.svg';
+const _kLightLogoAsset = 'assets/logo_light.svg';
+const _kDarkLogoAsset = 'assets/logo_dark.svg';
 
 List<String> _logoAssetCandidatesForBrightness(Brightness brightness) {
   return brightness == Brightness.dark
@@ -3775,12 +3798,10 @@ class _LogoState extends State<_Logo> {
       builder: (BuildContext context, AsyncSnapshot<String?> snapshot) {
         final asset = snapshot.data;
         if (asset != null) {
-          final image = Image.asset(
+          final image = SvgPicture.asset(
             asset,
             fit: BoxFit.contain,
-            errorBuilder: (ctx, error, stackTrace) {
-              return Container();
-            },
+            placeholderBuilder: (ctx) => Container(),
           );
           return Container(
             constraints: BoxConstraints(maxWidth: 300, maxHeight: 60),
