@@ -611,8 +611,12 @@ class _DesktopHomePageState extends State<DesktopHomePage>
       String? link,
       bool? closeButton,
       String? closeOption}) {
-    if (bind.mainGetBuildinOption(key: kOptionHideHelpCards) == 'Y' &&
-        content != 'install_daemon_tip') {
+    // Atlas: suppress ALL help/install nag cards when hide-help-cards is set —
+    // including install_daemon_tip, which upstream RustDesk deliberately exempts.
+    // The Atlas Local Agent owns unattended access, and the design (annotation
+    // h-nag) requires these cards absent, so the pink "install service" prompt
+    // must not survive the flag.
+    if (bind.mainGetBuildinOption(key: kOptionHideHelpCards) == 'Y') {
       return const SizedBox();
     }
     void closeCard() async {
