@@ -137,6 +137,14 @@ class _PeerTabPageState extends State<PeerTabPage>
   Widget _createSwitchBar(BuildContext context) {
     final model = Provider.of<PeerTabModel>(context);
     var counter = -1;
+    // Atlas Remote — pill tab bar. Active tab = white rounded chip (radius 8)
+    // with ink text; inactive = ink-500 on transparent. On desktop the tabs
+    // show their text label (Recent / Favorites / …); mobile keeps the compact
+    // icon so the narrow bar still fits.
+    const inkActive = Color(0xFF1C1917);
+    const inkMuted = Color(0xFF858585);
+    const cardWhite = Color(0xFFFFFFFF);
+    final bool showLabels = isDesktop || isWebDesktop;
     return ReorderableListView(
         buildDefaultDragHandles: false,
         onReorder: model.reorder,
@@ -144,44 +152,68 @@ class _PeerTabPageState extends State<PeerTabPage>
         physics: NeverScrollableScrollPhysics(),
         children: model.visibleEnabledOrderedIndexs.map((t) {
           final selected = model.currentTab == t;
-          final color = selected
-              ? MyTheme.tabbar(context).selectedTextColor
-              : MyTheme.tabbar(context).unSelectedTextColor
-            ?..withOpacity(0.5);
           final hover = false.obs;
-          final deco = BoxDecoration(
-              color: Theme.of(context).colorScheme.background,
-              borderRadius: BorderRadius.circular(6));
-          final decoBorder = BoxDecoration(
-              border: Border(
-            bottom: BorderSide(width: 2, color: color!),
-          ));
           counter += 1;
           return ReorderableDragStartListener(
               key: ValueKey(t),
               index: counter,
-              child: Obx(() => Tooltip(
-                    preferBelow: false,
-                    message: model.tabTooltip(t),
-                    onTriggered: isMobile ? mobileShowTabVisibilityMenu : null,
-                    child: InkWell(
-                      child: Container(
-                        decoration: (hover.value
-                            ? (selected ? decoBorder : deco)
-                            : (selected ? decoBorder : null)),
-                        child: Icon(model.tabIcon(t), color: color)
-                            .paddingSymmetric(horizontal: 4),
-                      ).paddingSymmetric(horizontal: 4),
-                      onTap: isOptionFixed(kOptionPeerTabIndex)
-                          ? null
-                          : () async {
-                              await handleTabSelection(t);
-                              await bind.setLocalFlutterOption(
-                                  k: kOptionPeerTabIndex, v: t.toString());
-                            },
-                      onHover: (value) => hover.value = value,
+              child: Obx(() {
+                final bg = selected
+                    ? cardWhite
+                    : (hover.value
+                        ? const Color(0xFFEAEEE7)
+                        : Colors.transparent);
+                final fg = selected ? inkActive : inkMuted;
+                return Tooltip(
+                  preferBelow: false,
+                  message: model.tabTooltip(t),
+                  onTriggered: isMobile ? mobileShowTabVisibilityMenu : null,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 120),
+                      margin: const EdgeInsets.only(right: 4),
+                      padding: EdgeInsets.symmetric(
+                          horizontal: showLabels ? 12 : 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: bg,
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: selected
+                            ? [
+                                BoxShadow(
+                                  color: const Color(0xFF1C1917)
+                                      .withOpacity(0.06),
+                                  blurRadius: 3,
+                                  offset: const Offset(0, 1),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: showLabels
+                          ? Text(
+                              model.tabTooltip(t),
+                              style: TextStyle(
+                                fontFamily: kAtlasBodyFont,
+                                fontSize: 13,
+                                fontWeight: selected
+                                    ? FontWeight.w600
+                                    : FontWeight.w500,
+                                color: fg,
+                              ),
+                            )
+                          : Icon(model.tabIcon(t), color: fg, size: 18),
                     ),
-                  )));
+                    onTap: isOptionFixed(kOptionPeerTabIndex)
+                        ? null
+                        : () async {
+                            await handleTabSelection(t);
+                            await bind.setLocalFlutterOption(
+                                k: kOptionPeerTabIndex, v: t.toString());
+                          },
+                    onHover: (value) => hover.value = value,
+                  ),
+                );
+              }));
         }).toList());
   }
 

@@ -387,11 +387,9 @@ class MyTheme {
   static ThemeData lightTheme = ThemeData(
     // https://stackoverflow.com/questions/77537315/after-upgrading-to-flutter-3-16-the-app-bar-background-color-button-size-and
     useMaterial3: false,
-    // Atlas body font. NOTE: the Inter/Plus Jakarta Sans .ttf files are not
-    // bundled yet (design export ships .woff2, which Flutter cannot load), so
-    // this resolves to the platform default until the .ttf assets are added to
-    // flutter/assets/fonts + declared in pubspec.yaml. Wiring the family name
-    // now means the app picks Inter up automatically once the fonts land.
+    // Atlas body font (Inter) — variable TTF bundled in pubspec. Headings use
+    // Plus Jakarta Sans via the textTheme titleLarge/titleSmall below (design
+    // token --font-display), with ink-scale colours + -0.015em heading tracking.
     fontFamily: kAtlasBodyFont,
     brightness: Brightness.light,
     hoverColor: Color.fromARGB(255, 234, 238, 231),
@@ -422,11 +420,21 @@ class MyTheme {
           )
         : null,
     textTheme: const TextTheme(
-        titleLarge: TextStyle(fontSize: 19, color: Colors.black87),
-        titleSmall: TextStyle(fontSize: 14, color: Colors.black87),
-        bodySmall: TextStyle(fontSize: 12, color: Colors.black87, height: 1.25),
+        // Headings = Plus Jakarta Sans, Atlas ink (#1C1917), -0.015em tracking.
+        titleLarge: TextStyle(
+            fontFamily: kAtlasDisplayFont,
+            fontSize: 19,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.3,
+            color: Color(0xFF1C1917)),
+        titleSmall: TextStyle(
+            fontFamily: kAtlasDisplayFont,
+            fontSize: 14,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF292524)),
+        bodySmall: TextStyle(fontSize: 12, color: Color(0xFF44403C), height: 1.25),
         bodyMedium:
-            TextStyle(fontSize: 14, color: Colors.black87, height: 1.25),
+            TextStyle(fontSize: 14, color: Color(0xFF292524), height: 1.25),
         labelLarge: TextStyle(fontSize: 16.0, color: MyTheme.accent80)),
     cardColor: grayBg,
     hintColor: Color(0xFFAAAAAA),

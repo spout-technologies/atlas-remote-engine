@@ -14,6 +14,7 @@ import 'package:visibility_detector/visibility_detector.dart';
 import 'package:window_manager/window_manager.dart';
 
 import '../../common.dart';
+import '../../common/formatter/id_formatter.dart';
 import '../../models/peer_model.dart';
 import '../../models/platform_model.dart';
 import 'peer_card.dart';
@@ -72,12 +73,19 @@ class _PeersView extends StatefulWidget {
   final PeerFilter? peerFilter;
   final PeerCardBuilder peerCardBuilder;
   final PeerTabIndex peerTabIndex;
+  // Atlas Remote: force a full-width list layout regardless of the global
+  // peerCardUiType. Used by the Recent tab to render an Atlas device table
+  // (one row per peer) instead of RustDesk's grid of peer cards.
+  final bool forceListLayout;
+  final double? rowHeight;
 
   const _PeersView(
       {required this.peers,
       required this.peerCardBuilder,
       required this.peerTabIndex,
       this.peerFilter,
+      this.forceListLayout = false,
+      this.rowHeight,
       Key? key})
       : super(key: key);
 
@@ -249,6 +257,10 @@ class _PeersViewState extends State<_PeersView>
               // No need to listen the currentTab change event.
               // Because the currentTab change event will trigger the peers change event,
               // and the peers change event will trigger _buildPeersView().
+              if (widget.forceListLayout && !isPortrait) {
+                return Container(
+                    height: widget.rowHeight ?? 45, child: visibilityChild);
+              }
               return !isPortrait
                   ? Obx(() => peerCardUiType.value == PeerUiType.list
                       ? Container(height: 45, child: visibilityChild)
@@ -263,6 +275,24 @@ class _PeersViewState extends State<_PeersView>
             // We should avoid too many rebuilds. Win10(Some machines) on Flutter 3.19.6.
             // Continious rebuilds of `ListView.builder` will cause memory leak.
             // Simple demo can reproduce this issue.
+            // Atlas: Recent tab renders a borderless full-width table — no
+            // inter-row spacing, no right gutter (the 1px separators + card
+            // border come from the Atlas row widget itself).
+            if (widget.forceListLayout) {
+              final tableChild = ListView.builder(
+                controller: _scrollController,
+                itemCount: peers.length,
+                itemBuilder: (BuildContext context, int index) {
+                  return buildOnePeer(peers[index], false);
+                },
+              );
+              if (updateEvent == UpdateEvent.load) {
+                _curPeers.clear();
+                _curPeers.addAll(peers.map((e) => e.id));
+                _queryOnlines(true);
+              }
+              return tableChild;
+            }
             final Widget child = Obx(() => stateGlobal.isPortrait.isTrue
                 ? ListView.builder(
                     itemCount: peers.length,
@@ -414,12 +444,16 @@ abstract class BasePeersView extends StatelessWidget {
   final PeerTabIndex peerTabIndex;
   final PeerFilter? peerFilter;
   final PeerCardBuilder peerCardBuilder;
+  final bool forceListLayout;
+  final double? rowHeight;
 
   const BasePeersView({
     Key? key,
     required this.peerTabIndex,
     this.peerFilter,
     required this.peerCardBuilder,
+    this.forceListLayout = false,
+    this.rowHeight,
   }) : super(key: key);
 
   @override
@@ -446,27 +480,251 @@ abstract class BasePeersView extends StatelessWidget {
         peers: peers,
         peerFilter: peerFilter,
         peerCardBuilder: peerCardBuilder,
-        peerTabIndex: peerTabIndex);
+        peerTabIndex: peerTabIndex,
+        forceListLayout: forceListLayout,
+        rowHeight: rowHeight);
   }
 }
 
 class RecentPeersView extends BasePeersView {
+  // Atlas Remote — Recent tab renders an Atlas device table (see
+  // `_AtlasRecentDeviceRow`) on desktop instead of RustDesk's peer-card grid.
+  // Mobile keeps the stock RecentPeerCard so the touch UI is unchanged.
   RecentPeersView(
       {Key? key, EdgeInsets? menuPadding, ScrollController? scrollController})
       : super(
           key: key,
           peerTabIndex: PeerTabIndex.recent,
-          peerCardBuilder: (Peer peer) => RecentPeerCard(
-            peer: peer,
-            menuPadding: menuPadding,
-          ),
+          forceListLayout: isDesktop || isWebDesktop,
+          rowHeight: 52,
+          peerCardBuilder: (Peer peer) => (isDesktop || isWebDesktop)
+              ? _AtlasRecentDeviceRow(peer: peer)
+              : RecentPeerCard(
+                  peer: peer,
+                  menuPadding: menuPadding,
+                ),
         );
 
   @override
   Widget build(BuildContext context) {
-    final widget = super.build(context);
+    final peersView = super.build(context);
     bind.mainLoadRecentPeers();
-    return widget;
+    if (!(isDesktop || isWebDesktop)) {
+      return peersView;
+    }
+    // Wrap the table body in a white card with a header row
+    // (DEVICE | CLIENT | LAST CONNECTED).
+    return Container(
+      margin: const EdgeInsets.only(right: 12),
+      decoration: BoxDecoration(
+        color: _kAtlasCard,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _kAtlasBorder, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1C1917).withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Header row
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: _kAtlasBorder, width: 1),
+              ),
+            ),
+            child: Row(
+              children: const [
+                Expanded(
+                    flex: 4,
+                    child: _AtlasTableHeaderCell(label: 'DEVICE')),
+                Expanded(
+                    flex: 3,
+                    child: _AtlasTableHeaderCell(label: 'CLIENT')),
+                Expanded(
+                    flex: 3,
+                    child: _AtlasTableHeaderCell(label: 'LAST CONNECTED')),
+                SizedBox(width: 36),
+              ],
+            ),
+          ),
+          Expanded(child: peersView),
+        ],
+      ),
+    );
+  }
+}
+
+// Atlas Remote design tokens for the device table.
+const Color _kAtlasCard = Color(0xFFFFFFFF);
+const Color _kAtlasBorder = Color(0xFFD1D6CD);
+const Color _kAtlasInk900 = Color(0xFF1C1917);
+const Color _kAtlasInk700 = Color(0xFF44403C);
+const Color _kAtlasInk500 = Color(0xFF858585);
+const Color _kAtlasGreen = Color(0xFF6EA924);
+const Color _kAtlasGreenPale = Color(0xFFF4F8EC);
+
+class _AtlasTableHeaderCell extends StatelessWidget {
+  final String label;
+  const _AtlasTableHeaderCell({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: const TextStyle(
+        fontFamily: kAtlasBodyFont,
+        fontSize: 11,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.88,
+        color: _kAtlasInk500,
+      ),
+    );
+  }
+}
+
+// A single device row in the Atlas Recent table. Double-tap or the green
+// arrow connects (remote control). The peer data is real — id/hostname/
+// username/online come from the recent-peers model. There is no per-peer
+// "last connected" timestamp in the RustDesk peer model, so that column
+// reflects the honest available signal: online / offline status.
+class _AtlasRecentDeviceRow extends StatefulWidget {
+  final Peer peer;
+  const _AtlasRecentDeviceRow({required this.peer, Key? key}) : super(key: key);
+
+  @override
+  State<_AtlasRecentDeviceRow> createState() => _AtlasRecentDeviceRowState();
+}
+
+class _AtlasRecentDeviceRowState extends State<_AtlasRecentDeviceRow> {
+  bool _hover = false;
+
+  void _connect() => connect(context, widget.peer.id);
+
+  @override
+  Widget build(BuildContext context) {
+    final peer = widget.peer;
+    final device = peer.alias.isNotEmpty ? peer.alias : formatID(peer.id);
+    final client = peer.hostname.isNotEmpty
+        ? peer.hostname
+        : (peer.username.isNotEmpty ? peer.username : '—');
+    final lastConnected =
+        peer.online ? translate('Online') : translate('Offline');
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onDoubleTap: _connect,
+        child: Container(
+          color: _hover ? _kAtlasGreenPale.withOpacity(0.4) : Colors.transparent,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: const BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: _kAtlasBorder, width: 1),
+            ),
+          ),
+          child: Row(
+            children: [
+              // DEVICE — mono, ink-900, with platform glyph + online dot
+              Expanded(
+                flex: 4,
+                child: Row(
+                  children: [
+                    getPlatformImage(peer.platform, size: 18)
+                        .marginOnly(right: 8),
+                    Flexible(
+                      child: Text(
+                        device,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: kAtlasMonoFont,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: _kAtlasInk900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // CLIENT — Inter, ink-700
+              Expanded(
+                flex: 3,
+                child: Text(
+                  client,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: kAtlasBodyFont,
+                    fontSize: 13,
+                    color: _kAtlasInk700,
+                  ),
+                ),
+              ),
+              // LAST CONNECTED — ink-500
+              Expanded(
+                flex: 3,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      margin: const EdgeInsets.only(right: 6),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: peer.online
+                            ? _kAtlasGreen
+                            : const Color(0xFFB7BDB0),
+                      ),
+                    ),
+                    Flexible(
+                      child: Text(
+                        lastConnected,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: kAtlasBodyFont,
+                          fontSize: 13,
+                          color: _kAtlasInk500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Green circular connect-arrow
+              Tooltip(
+                message: translate('Connect'),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: _connect,
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _hover ? _kAtlasGreen : _kAtlasGreenPale,
+                    ),
+                    child: Icon(
+                      Icons.arrow_forward,
+                      size: 15,
+                      color: _hover ? Colors.white : _kAtlasGreen,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 

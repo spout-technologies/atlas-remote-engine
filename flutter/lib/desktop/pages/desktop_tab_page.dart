@@ -96,14 +96,23 @@ class _DesktopTabPageState extends State<DesktopTabPage> {
             backgroundColor: Theme.of(context).colorScheme.background,
             body: DesktopTab(
               controller: tabController,
-              tail: Offstage(
-                offstage: bind.isIncomingOnly() || bind.isDisableSettings(),
-                child: ActionIcon(
-                  message: 'Settings',
-                  icon: IconFont.menu,
-                  onTap: DesktopTabPage.onAddSetting,
-                  isClose: false,
-                ),
+              // Atlas Remote: top-right status pill (relay + service readiness)
+              // followed by the Settings action.
+              tail: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const _AtlasStatusPill(),
+                  Offstage(
+                    offstage:
+                        bind.isIncomingOnly() || bind.isDisableSettings(),
+                    child: ActionIcon(
+                      message: 'Settings',
+                      icon: IconFont.menu,
+                      onTap: DesktopTabPage.onAddSetting,
+                      isClose: false,
+                    ),
+                  ),
+                ],
               ),
             )));
     return isMacOS || kUseCompatibleUiMode
@@ -115,5 +124,64 @@ class _DesktopTabPageState extends State<DesktopTabPage> {
               child: tabWidget,
             ),
           );
+  }
+}
+
+// Atlas Remote: top-right window-chrome status pill. A small green dot + text
+// "Ready · Atlas Relay (EU)" on a pale-green rounded-full pill. The dot colour
+// and the leading status word track the real service status
+// (stateGlobal.svcStatus), so the pill reads as a live health indicator.
+class _AtlasStatusPill extends StatelessWidget {
+  const _AtlasStatusPill();
+
+  static const Color _green = Color(0xFF6EA924);
+  static const Color _greenPale = Color(0xFFF4F8EC);
+  static const Color _ink = Color(0xFF292524);
+  static const Color _warn = Color(0xFFE0A312);
+  static const String _relayLabel = 'Atlas Relay (EU)';
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final status = stateGlobal.svcStatus.value;
+      final bool ready = status == SvcStatus.ready;
+      final bool connecting = status == SvcStatus.connecting;
+      final Color dot = ready
+          ? _green
+          : (connecting ? _warn : const Color(0xFFB7BDB0));
+      final String statusWord = ready
+          ? translate('Ready')
+          : (connecting
+              ? translate('connecting_status')
+              : translate('not_ready_status'));
+      return Container(
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: _greenPale,
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 7,
+              height: 7,
+              margin: const EdgeInsets.only(right: 7),
+              decoration: BoxDecoration(shape: BoxShape.circle, color: dot),
+            ),
+            Text(
+              '$statusWord · $_relayLabel',
+              style: const TextStyle(
+                fontFamily: kAtlasBodyFont,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: _ink,
+              ),
+            ),
+          ],
+        ),
+      );
+    });
   }
 }

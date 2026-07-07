@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 
-import 'package:auto_size_text/auto_size_text.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common.dart';
@@ -79,6 +78,11 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   Widget buildLeftPane(BuildContext context) {
     final isIncomingOnly = bind.isIncomingOnly();
     final isOutgoingOnly = bind.isOutgoingOnly();
+    // Atlas Remote Home — LEFT pane ("YOUR DESKTOP"). Restructured from
+    // RustDesk's stacked ID/password strips into the Claude Design card layout:
+    // atlasOS logo → "YOUR DESKTOP" label → THIS DEVICE'S ID card →
+    // PASSWORD card (with segmented One-time/Permanent toggle) → tip, with the
+    // "Allow remote control" switch pinned to the bottom of the pane.
     final children = <Widget>[
       if (!isOutgoingOnly) buildPresetPasswordWarning(),
       if (bind.isCustomClient())
@@ -87,13 +91,13 @@ class _DesktopHomePageState extends State<DesktopHomePage>
           child: loadPowered(context),
         ),
       Align(
-        alignment: Alignment.center,
+        alignment: Alignment.centerLeft,
         child: loadLogo(),
-      ),
-      buildTip(context),
+      ).marginOnly(left: kAtlasPanePad, top: 22, bottom: 18),
+      if (!isOutgoingOnly) _buildEyebrow(context, translate("Your Desktop")),
       if (!isOutgoingOnly) buildIDBoard(context),
       if (!isOutgoingOnly) buildPasswordBoard(context),
-      if (!isOutgoingOnly) buildAllowRemoteControlSwitch(context),
+      buildTip(context),
       FutureBuilder<Widget>(
         future: Future.value(
             Obx(() => buildHelpCards(stateGlobal.updateUrl.value))),
@@ -132,20 +136,27 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     return ChangeNotifierProvider.value(
       value: gFFI.serverModel,
       child: Container(
-        width: isIncomingOnly ? 280.0 : 200.0,
+        width: isIncomingOnly ? 300.0 : 380.0,
         color: Theme.of(context).colorScheme.background,
         child: Stack(
           children: [
             Column(
               children: [
-                SingleChildScrollView(
-                  controller: _leftPaneScrollController,
-                  child: Column(
-                    key: _childKey,
-                    children: children,
+                Expanded(
+                  child: SingleChildScrollView(
+                    controller: _leftPaneScrollController,
+                    child: Column(
+                      key: _childKey,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: children,
+                    ),
                   ),
                 ),
-                Expanded(child: Container())
+                // Atlas: pin the "Allow remote control" switch to the bottom of
+                // the left pane (design annotation: incoming-control affordance
+                // reads as a persistent setting, not a scrolled-away control).
+                if (!isOutgoingOnly)
+                  buildAllowRemoteControlSwitch(context),
               ],
             ),
             if (isOutgoingOnly)
@@ -181,6 +192,57 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     );
   }
 
+  // Atlas design tokens (mirrors MyTheme + the Claude Design spec). Kept local
+  // to the Home screen so the card layout reads self-documenting.
+  static const double kAtlasPanePad = 20.0;
+  static const Color kAtlasInk900 = Color(0xFF1C1917); // headings
+  static const Color kAtlasInk500 = Color(0xFF858585); // labels / muted
+  static const Color kAtlasCard = Color(0xFFFFFFFF);
+  static const Color kAtlasFill = Color(0xFFEAEEE7); // subtle sage fill
+  static const Color kAtlasBorder = Color(0xFFD1D6CD); // border / divider
+  static const Color kAtlasGreen = Color(0xFF6EA924); // brand-500
+  static const Color kAtlasGreenPale = Color(0xFFF4F8EC);
+
+  // Uppercase eyebrow / label (ink-500, 11px, ~0.08em tracking).
+  Widget _buildEyebrow(BuildContext context, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(
+          left: kAtlasPanePad, right: kAtlasPanePad, bottom: 10),
+      child: Text(
+        text.toUpperCase(),
+        style: const TextStyle(
+          fontFamily: kAtlasBodyFont,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.88, // ~0.08em at 11px
+          color: kAtlasInk500,
+        ),
+      ),
+    );
+  }
+
+  // White card shell: radius 12, 1px border, very soft shadow.
+  Widget _buildCard({required Widget child, EdgeInsets? padding}) {
+    return Container(
+      margin: const EdgeInsets.only(
+          left: kAtlasPanePad, right: kAtlasPanePad, bottom: 12),
+      padding: padding ?? const EdgeInsets.fromLTRB(16, 14, 12, 14),
+      decoration: BoxDecoration(
+        color: kAtlasCard,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: kAtlasBorder, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1C1917).withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
   buildRightPane(BuildContext context) {
     return Container(
       color: Theme.of(context).scaffoldBackgroundColor,
@@ -194,120 +256,173 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   // incoming remote control. Replaces the underlined "Start service" link with
   // an affordance that reads as a setting rather than an error to fix.
   Widget buildAllowRemoteControlSwitch(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(left: 20, right: 11, top: 6, bottom: 2),
-      child: Obx(
-        () => Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Flexible(
-              child: Text(
-                translate('Allow remote control'),
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Divider(height: 1, thickness: 1, color: kAtlasBorder),
+        Container(
+          padding: const EdgeInsets.fromLTRB(kAtlasPanePad, 12, 14, 14),
+          child: Obx(
+            () => Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        translate('Allow remote control'),
+                        style: const TextStyle(
+                          fontFamily: kAtlasBodyFont,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: kAtlasInk900,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        translate('Turns incoming connections on or off.'),
+                        style: const TextStyle(
+                          fontFamily: kAtlasBodyFont,
+                          fontSize: 12,
+                          height: 1.3,
+                          color: kAtlasInk500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Switch(
+                  value: !svcStopped.value,
+                  activeColor: kAtlasGreen,
+                  onChanged: (bool value) async {
+                    await start_service(value);
+                  },
+                ),
+              ],
             ),
-            Switch(
-              value: !svcStopped.value,
-              onChanged: (bool value) async {
-                await start_service(value);
-              },
-            ),
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 
+  // Atlas: "THIS DEVICE'S ID" card. The ID board still reflects the real
+  // serverId (device identity) and its copy action; only the chrome changed —
+  // a bordered white card with an uppercase label + "…" menu on top and the
+  // ID in large ink-900 mono with a copy button on the right.
   buildIDBoard(BuildContext context) {
     final model = gFFI.serverModel;
-    return Container(
-      margin: const EdgeInsets.only(left: 20, right: 11),
-      height: 57,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.baseline,
-        textBaseline: TextBaseline.alphabetic,
+    return _buildCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 2,
-            decoration: const BoxDecoration(color: MyTheme.accent),
-          ).marginOnly(top: 5),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(left: 7),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    height: 25,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          translate("ID"),
-                          style: TextStyle(
-                              fontSize: 14,
-                              color: Theme.of(context)
-                                  .textTheme
-                                  .titleLarge
-                                  ?.color
-                                  ?.withOpacity(0.5)),
-                        ).marginOnly(top: 5),
-                        buildPopupMenu(context)
-                      ],
-                    ),
-                  ),
-                  Flexible(
-                    child: GestureDetector(
-                      onDoubleTap: () {
-                        Clipboard.setData(
-                            ClipboardData(text: model.serverId.text));
-                        showToast(translate("Copied"));
-                      },
-                      child: TextFormField(
-                        controller: model.serverId,
-                        readOnly: true,
-                        decoration: InputDecoration(
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.only(top: 10, bottom: 10),
-                        ),
-                        style: TextStyle(
-                          fontSize: 22,
-                        ),
-                      ).workaroundFreezeLinuxMint(),
-                    ),
-                  )
-                ],
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                translate("This Device's ID").toUpperCase(),
+                style: const TextStyle(
+                  fontFamily: kAtlasBodyFont,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.88,
+                  color: kAtlasInk500,
+                ),
               ),
-            ),
+              buildPopupMenu(context),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onDoubleTap: () {
+                    Clipboard.setData(
+                        ClipboardData(text: model.serverId.text));
+                    showToast(translate("Copied"));
+                  },
+                  child: TextFormField(
+                    controller: model.serverId,
+                    readOnly: true,
+                    decoration: const InputDecoration(
+                      filled: false,
+                      isCollapsed: true,
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(vertical: 4),
+                    ),
+                    style: const TextStyle(
+                      fontFamily: kAtlasMonoFont,
+                      fontSize: 34,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1.0,
+                      height: 1.05,
+                      color: kAtlasInk900,
+                    ),
+                  ).workaroundFreezeLinuxMint(),
+                ),
+              ),
+              _buildIconButton(
+                context,
+                icon: Icons.copy_rounded,
+                tooltip: translate('Copy'),
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: model.serverId.text));
+                  showToast(translate("Copied"));
+                },
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  Widget buildPopupMenu(BuildContext context) {
-    final textColor = Theme.of(context).textTheme.titleLarge?.color;
-    RxBool hover = false.obs;
-    return InkWell(
-      onTap: DesktopTabPage.onAddSetting,
-      child: Tooltip(
-        message: translate('Settings'),
-        child: Obx(
-          () => CircleAvatar(
-            radius: 15,
-            backgroundColor: hover.value
-                ? Theme.of(context).scaffoldBackgroundColor
-                : Theme.of(context).colorScheme.background,
-            child: Icon(
-              Icons.more_vert_outlined,
-              size: 20,
-              color: hover.value ? textColor : textColor?.withOpacity(0.5),
+  // Small square ghost icon button (copy / refresh) — ink-500 icon that goes
+  // ink-900 on a pale-green square on hover.
+  Widget _buildIconButton(BuildContext context,
+      {required IconData icon,
+      required String tooltip,
+      required VoidCallback onTap,
+      Widget? iconWidget}) {
+    final hover = false.obs;
+    return Obx(
+      () => Tooltip(
+        message: tooltip,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: onTap,
+          onHover: (v) => hover.value = v,
+          child: Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: hover.value ? kAtlasGreenPale : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
             ),
+            child: iconWidget ??
+                Icon(
+                  icon,
+                  size: 18,
+                  color: hover.value ? kAtlasInk900 : kAtlasInk500,
+                ),
           ),
         ),
       ),
-      onHover: (value) => hover.value = value,
+    );
+  }
+
+  Widget buildPopupMenu(BuildContext context) {
+    return _buildIconButton(
+      context,
+      icon: Icons.more_horiz,
+      tooltip: translate('Settings'),
+      onTap: DesktopTabPage.onAddSetting,
     );
   }
 
@@ -321,141 +436,183 @@ class _DesktopHomePageState extends State<DesktopHomePage>
         ));
   }
 
+  // Atlas: "PASSWORD" card. Preserves the real incoming-control password
+  // surface (serverPasswd, refresh temporary password, change permanent
+  // password) but reframes it as a card with a segmented One-time / Permanent
+  // toggle bound to the verification method, and the password shown in mono
+  // with copy + refresh actions on the right.
   buildPasswordBoard2(BuildContext context, ServerModel model) {
-    RxBool refreshHover = false.obs;
-    RxBool editHover = false.obs;
-    final textColor = Theme.of(context).textTheme.titleLarge?.color;
     final showOneTime = model.approveMode != 'click' &&
         model.verificationMethod != kUsePermanentPassword;
-    return Container(
-      margin: EdgeInsets.only(left: 20.0, right: 16, top: 13, bottom: 13),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.baseline,
-        textBaseline: TextBaseline.alphabetic,
+    return _buildCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 2,
-            height: 52,
-            decoration: BoxDecoration(color: MyTheme.accent),
-          ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(left: 7),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  AutoSizeText(
-                    translate("One-time Password"),
-                    style: TextStyle(
-                        fontSize: 14, color: textColor?.withOpacity(0.5)),
-                    maxLines: 1,
-                  ),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: GestureDetector(
-                          onDoubleTap: () {
-                            if (showOneTime) {
-                              Clipboard.setData(
-                                  ClipboardData(text: model.serverPasswd.text));
-                              showToast(translate("Copied"));
-                            }
-                          },
-                          child: TextFormField(
-                            controller: model.serverPasswd,
-                            readOnly: true,
-                            decoration: InputDecoration(
-                              border: InputBorder.none,
-                              contentPadding:
-                                  EdgeInsets.only(top: 14, bottom: 10),
-                            ),
-                            style: TextStyle(fontSize: 15),
-                          ).workaroundFreezeLinuxMint(),
-                        ),
-                      ),
-                      if (showOneTime)
-                        AnimatedRotationWidget(
-                          onPressed: () => bind.mainUpdateTemporaryPassword(),
-                          child: Tooltip(
-                            message: translate('Refresh Password'),
-                            child: Obx(() => RotatedBox(
-                                quarterTurns: 2,
-                                child: Icon(
-                                  Icons.refresh,
-                                  color: refreshHover.value
-                                      ? textColor
-                                      : Color(0xFFDDDDDD),
-                                  size: 22,
-                                ))),
-                          ),
-                          onHover: (value) => refreshHover.value = value,
-                        ).marginOnly(right: 8, top: 4),
-                      if (!bind.isDisableSettings())
-                        InkWell(
-                          child: Tooltip(
-                            message: translate('Change Password'),
-                            child: Obx(
-                              () => Icon(
-                                Icons.edit,
-                                color: editHover.value
-                                    ? textColor
-                                    : Color(0xFFDDDDDD),
-                                size: 22,
-                              ).marginOnly(right: 8, top: 4),
-                            ),
-                          ),
-                          onTap: () => DesktopSettingPage.switch2page(
-                              SettingsTabKey.safety),
-                          onHover: (value) => editHover.value = value,
-                        ),
-                    ],
-                  ),
-                ],
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(
+                translate("Password").toUpperCase(),
+                style: const TextStyle(
+                  fontFamily: kAtlasBodyFont,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.88,
+                  color: kAtlasInk500,
+                ),
               ),
-            ),
+              if (!bind.isDisableSettings()) _buildPasswordModeToggle(model),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onDoubleTap: () {
+                    if (showOneTime) {
+                      Clipboard.setData(
+                          ClipboardData(text: model.serverPasswd.text));
+                      showToast(translate("Copied"));
+                    }
+                  },
+                  child: TextFormField(
+                    controller: model.serverPasswd,
+                    readOnly: true,
+                    decoration: const InputDecoration(
+                      filled: false,
+                      isCollapsed: true,
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.symmetric(vertical: 6),
+                    ),
+                    style: const TextStyle(
+                      fontFamily: kAtlasMonoFont,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 2.0,
+                      color: kAtlasInk900,
+                    ),
+                  ).workaroundFreezeLinuxMint(),
+                ),
+              ),
+              _buildIconButton(
+                context,
+                icon: Icons.copy_rounded,
+                tooltip: translate('Copy'),
+                onTap: () {
+                  if (showOneTime) {
+                    Clipboard.setData(
+                        ClipboardData(text: model.serverPasswd.text));
+                    showToast(translate("Copied"));
+                  } else {
+                    DesktopSettingPage.switch2page(SettingsTabKey.safety);
+                  }
+                },
+              ),
+              if (showOneTime)
+                _buildIconButton(
+                  context,
+                  icon: Icons.refresh,
+                  tooltip: translate('Refresh Password'),
+                  onTap: () => bind.mainUpdateTemporaryPassword(),
+                  iconWidget: AnimatedRotationWidget(
+                    onPressed: () => bind.mainUpdateTemporaryPassword(),
+                    child: const Icon(Icons.refresh,
+                        size: 18, color: kAtlasInk500),
+                  ),
+                )
+              else if (!bind.isDisableSettings())
+                _buildIconButton(
+                  context,
+                  icon: Icons.edit_outlined,
+                  tooltip: translate('Change Password'),
+                  onTap: () =>
+                      DesktopSettingPage.switch2page(SettingsTabKey.safety),
+                ),
+            ],
           ),
         ],
       ),
     );
   }
 
+  // Segmented One-time / Permanent pill. Sage track; the active segment is a
+  // white rounded chip with ink text, the inactive segment is ink-500.
+  // Bound to the verification method (kUseTemporaryPassword / kUsePermanentPassword).
+  Widget _buildPasswordModeToggle(ServerModel model) {
+    final isPermanent = model.verificationMethod == kUsePermanentPassword;
+
+    Widget seg(String label, bool active, VoidCallback onTap) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(6),
+        onTap: active ? null : onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: active ? kAtlasCard : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+            boxShadow: active
+                ? [
+                    BoxShadow(
+                      color: const Color(0xFF1C1917).withOpacity(0.06),
+                      blurRadius: 3,
+                      offset: const Offset(0, 1),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontFamily: kAtlasBodyFont,
+              fontSize: 11,
+              fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+              color: active ? kAtlasInk900 : kAtlasInk500,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: kAtlasFill,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          seg(translate("One-time"), !isPermanent, () async {
+            await model.setVerificationMethod(kUseTemporaryPassword);
+          }),
+          seg(translate("Permanent"), isPermanent, () async {
+            await model.setVerificationMethod(kUsePermanentPassword);
+          }),
+        ],
+      ),
+    );
+  }
+
+  // Atlas: tip line under the ID/PASSWORD cards (ink-500, 13px). The
+  // "YOUR DESKTOP" heading now lives in the eyebrow above the ID card.
   buildTip(BuildContext context) {
     final isOutgoingOnly = bind.isOutgoingOnly();
     return Padding(
-      padding:
-          const EdgeInsets.only(left: 20.0, right: 16, top: 16.0, bottom: 5),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Column(
-            children: [
-              if (!isOutgoingOnly)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    translate("Your Desktop"),
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                ),
-            ],
-          ),
-          SizedBox(
-            height: 10.0,
-          ),
-          if (!isOutgoingOnly)
-            Text(
-              translate("desk_tip"),
-              overflow: TextOverflow.clip,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          if (isOutgoingOnly)
-            Text(
-              translate("outgoing_only_desk_tip"),
-              overflow: TextOverflow.clip,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-        ],
+      padding: const EdgeInsets.only(
+          left: kAtlasPanePad, right: kAtlasPanePad, top: 2, bottom: 10),
+      child: Text(
+        translate(isOutgoingOnly ? "outgoing_only_desk_tip" : "desk_tip"),
+        overflow: TextOverflow.clip,
+        style: const TextStyle(
+          fontFamily: kAtlasBodyFont,
+          fontSize: 13,
+          height: 1.4,
+          color: kAtlasInk500,
+        ),
       ),
     );
   }
