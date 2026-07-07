@@ -517,9 +517,9 @@ class RecentPeersView extends BasePeersView {
     return Container(
       margin: const EdgeInsets.only(right: 12),
       decoration: BoxDecoration(
-        color: _kAtlasCard,
+        color: atlasCardColor(context),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _kAtlasBorder, width: 1),
+        border: Border.all(color: atlasBorderColor(context), width: 1),
         boxShadow: [
           BoxShadow(
             color: const Color(0xFF1C1917).withOpacity(0.04),
@@ -535,10 +535,10 @@ class RecentPeersView extends BasePeersView {
           // Header row (thead — surface-50 fill, surface-200 divider)
           Container(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-            decoration: const BoxDecoration(
-              color: _kAtlasHeadFill,
+            decoration: BoxDecoration(
+              color: atlasPageColor(context),
               border: Border(
-                bottom: BorderSide(color: _kAtlasHeadBorder, width: 1),
+                bottom: BorderSide(color: atlasBorderColor(context), width: 1),
               ),
             ),
             child: Row(
@@ -564,17 +564,17 @@ class RecentPeersView extends BasePeersView {
 }
 
 // Atlas Remote design tokens for the device table (Claude Design DS Table).
-const Color _kAtlasCard = Color(0xFFFFFFFF);
-const Color _kAtlasBorder = Color(0xFFD1D6CD); // surface-300 (card border)
-const Color _kAtlasHeadBorder = Color(0xFFD1D7CC); // surface-200 (th divider)
-const Color _kAtlasRowBorder = Color(0xFFEAEEE7); // surface-100 (td divider)
-const Color _kAtlasHeadFill = Color(0xFFF7F9F6); // surface-50 (thead bg)
-const Color _kAtlasFill = Color(0xFFEAEEE7); // surface-100 fill
-const Color _kAtlasInk900 = Color(0xFF1C1917); // text-heading
-const Color _kAtlasInk700 = Color(0xFF44403C); // text-body
-const Color _kAtlasInk500 = Color(0xFF858585); // text-label / muted
+//
+// Dark-mode note: card / border / head-fill / row-divider / fill / ink colours
+// are now sourced from the theme-aware getters in common.dart
+// (atlasCardColor / atlasBorderColor / atlasPageColor / atlasFillColor /
+// atlasInkPrimary|Body|Muted) so the tables adapt to the dark shell. They return
+// the exact light hex below in light mode, so light mode is byte-identical.
+// The green accents are intentionally constant across both modes.
 const Color _kAtlasGreen = Color(0xFF6EA924); // brand-500
 const Color _kAtlasGreenDark = Color(0xFF58871D); // green-dark (row arrow)
+// Offline status dot — muted sage-grey, constant in both modes (tiny 7px dot).
+const Color _kAtlasOfflineDot = Color(0xFFB7BDB0);
 
 class _AtlasTableHeaderCell extends StatelessWidget {
   final String label;
@@ -584,12 +584,12 @@ class _AtlasTableHeaderCell extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       label,
-      style: const TextStyle(
+      style: TextStyle(
         fontFamily: kAtlasBodyFont,
         fontSize: 11,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.55, // 0.05em at 11px
-        color: _kAtlasInk500,
+        color: atlasInkMuted(context),
       ),
     );
   }
@@ -648,11 +648,11 @@ class _AtlasRecentDeviceRowState extends State<_AtlasRecentDeviceRow> {
         onSecondaryTapDown: (d) => _showContextMenu(d.globalPosition),
         onLongPress: () => _showContextMenu(_rowTopLeft()),
         child: Container(
-          color: _hover ? _kAtlasHeadFill : Colors.transparent,
+          color: _hover ? atlasPageColor(context) : Colors.transparent,
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             border: Border(
-              bottom: BorderSide(color: _kAtlasRowBorder, width: 1),
+              bottom: BorderSide(color: atlasFillColor(context), width: 1),
             ),
           ),
           child: Row(
@@ -668,11 +668,11 @@ class _AtlasRecentDeviceRowState extends State<_AtlasRecentDeviceRow> {
                       child: Text(
                         device,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: kAtlasMonoFont,
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: _kAtlasInk900,
+                          color: atlasInkPrimary(context),
                         ),
                       ),
                     ),
@@ -685,10 +685,10 @@ class _AtlasRecentDeviceRowState extends State<_AtlasRecentDeviceRow> {
                 child: Text(
                   client,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: kAtlasBodyFont,
                     fontSize: 14,
-                    color: _kAtlasInk700,
+                    color: atlasInkBody(context),
                   ),
                 ),
               ),
@@ -705,17 +705,17 @@ class _AtlasRecentDeviceRowState extends State<_AtlasRecentDeviceRow> {
                         shape: BoxShape.circle,
                         color: peer.online
                             ? _kAtlasGreen
-                            : const Color(0xFFB7BDB0),
+                            : _kAtlasOfflineDot,
                       ),
                     ),
                     Flexible(
                       child: Text(
                         lastConnected,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: kAtlasBodyFont,
                           fontSize: 12.5,
-                          color: _kAtlasInk500,
+                          color: atlasInkMuted(context),
                         ),
                       ),
                     ),
@@ -734,7 +734,7 @@ class _AtlasRecentDeviceRowState extends State<_AtlasRecentDeviceRow> {
                     height: 28,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(7),
-                      color: _hover ? _kAtlasGreen : _kAtlasFill,
+                      color: _hover ? _kAtlasGreen : atlasFillColor(context),
                     ),
                     child: Icon(
                       Icons.arrow_forward,
@@ -809,11 +809,11 @@ class _AtlasAbDeviceRowState extends State<_AtlasAbDeviceRow> {
         onSecondaryTapDown: (d) => _showContextMenu(d.globalPosition),
         onLongPress: () => _showContextMenu(_rowTopLeft()),
         child: Container(
-          color: _hover ? _kAtlasHeadFill : Colors.transparent,
+          color: _hover ? atlasPageColor(context) : Colors.transparent,
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: const BoxDecoration(
+          decoration: BoxDecoration(
             border: Border(
-              bottom: BorderSide(color: _kAtlasRowBorder, width: 1),
+              bottom: BorderSide(color: atlasFillColor(context), width: 1),
             ),
           ),
           child: Row(
@@ -829,11 +829,11 @@ class _AtlasAbDeviceRowState extends State<_AtlasAbDeviceRow> {
                       child: Text(
                         device,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: kAtlasMonoFont,
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
-                          color: _kAtlasInk900,
+                          color: atlasInkPrimary(context),
                         ),
                       ),
                     ),
@@ -851,10 +851,10 @@ class _AtlasAbDeviceRowState extends State<_AtlasAbDeviceRow> {
                 child: Text(
                   user,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: kAtlasBodyFont,
                     fontSize: 14,
-                    color: _kAtlasInk700,
+                    color: atlasInkBody(context),
                   ),
                 ),
               ),
@@ -871,17 +871,17 @@ class _AtlasAbDeviceRowState extends State<_AtlasAbDeviceRow> {
                         shape: BoxShape.circle,
                         color: peer.online
                             ? _kAtlasGreen
-                            : const Color(0xFFB7BDB0),
+                            : _kAtlasOfflineDot,
                       ),
                     ),
                     Flexible(
                       child: Text(
                         access,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: kAtlasBodyFont,
                           fontSize: 12.5,
-                          color: _kAtlasInk500,
+                          color: atlasInkMuted(context),
                         ),
                       ),
                     ),
@@ -900,7 +900,7 @@ class _AtlasAbDeviceRowState extends State<_AtlasAbDeviceRow> {
                     height: 28,
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(7),
-                      color: _hover ? _kAtlasGreen : _kAtlasFill,
+                      color: _hover ? _kAtlasGreen : atlasFillColor(context),
                     ),
                     child: Icon(
                       Icons.arrow_forward,
@@ -928,12 +928,12 @@ class _AtlasClientChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (tags.isEmpty) {
-      return const Text(
+      return Text(
         '—',
         style: TextStyle(
           fontFamily: kAtlasBodyFont,
           fontSize: 13,
-          color: _kAtlasInk500,
+          color: atlasInkMuted(context),
         ),
       );
     }
@@ -964,11 +964,11 @@ class _AtlasClientChip extends StatelessWidget {
                   child: Text(
                     primary,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: kAtlasBodyFont,
                       fontSize: 12.5,
                       fontWeight: FontWeight.w500,
-                      color: _kAtlasInk700,
+                      color: atlasInkBody(context),
                     ),
                   ),
                 ),
@@ -981,16 +981,16 @@ class _AtlasClientChip extends StatelessWidget {
             margin: const EdgeInsets.only(left: 4),
             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
             decoration: BoxDecoration(
-              color: _kAtlasFill,
+              color: atlasFillColor(context),
               borderRadius: BorderRadius.circular(5),
             ),
             child: Text(
               '+${tags.length - 1}',
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: kAtlasBodyFont,
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: _kAtlasInk500,
+                color: atlasInkMuted(context),
               ),
             ),
           ),
@@ -1072,12 +1072,12 @@ class AddressBookPeersView extends BasePeersView {
     // table (DEVICE | CLIENT | USER | ACCESS), so the two lists are consistent.
     return Container(
       decoration: BoxDecoration(
-        color: _kAtlasCard,
+        color: atlasCardColor(context),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _kAtlasBorder, width: 1),
+        border: Border.all(color: atlasBorderColor(context), width: 1),
         boxShadow: [
           BoxShadow(
-            color: _kAtlasInk900.withOpacity(0.04),
+            color: const Color(0xFF1C1917).withOpacity(0.04),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -1089,10 +1089,10 @@ class AddressBookPeersView extends BasePeersView {
         children: [
           Container(
             padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-            decoration: const BoxDecoration(
-              color: _kAtlasHeadFill,
+            decoration: BoxDecoration(
+              color: atlasPageColor(context),
               border: Border(
-                bottom: BorderSide(color: _kAtlasHeadBorder, width: 1),
+                bottom: BorderSide(color: atlasBorderColor(context), width: 1),
               ),
             ),
             child: Row(
