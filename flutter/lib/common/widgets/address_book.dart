@@ -24,6 +24,12 @@ import 'login.dart';
 
 final hideAbTagsPanel = false.obs;
 
+// Atlas Remote — fleet toolbar design tokens.
+const Color _kAbCard = Color(0xFFFFFFFF);
+const Color _kAbBorder = Color(0xFFD1D6CD);
+const Color _kAbInk500 = Color(0xFF858585);
+const String _kAllClients = '__atlas_all_clients__';
+
 class AddressBook extends StatefulWidget {
   final EdgeInsets? menuPadding;
   const AddressBook({Key? key, this.menuPadding}) : super(key: key);
@@ -73,6 +79,11 @@ class _AddressBookState extends State<AddressBook> {
       });
 
   Widget _buildAddressBookLandscape() {
+    // Atlas Remote — desktop fleet view: a Client/Site filter + device search
+    // toolbar (net-new, MSP-scale — design annotation f-filter) sits above the
+    // fleet table (AddressBookPeersView renders the Device/Client/User/Access
+    // table). The tags panel remains available for power users but is collapsed
+    // by default so the fleet reads as a single, wide table.
     return Row(
       children: [
         Offstage(
@@ -104,9 +115,188 @@ class _AddressBookState extends State<AddressBook> {
                 ),
               ),
             ).marginOnly(right: 12.0)),
-        _buildPeersViews()
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildFleetToolbar(),
+              const SizedBox(height: 10),
+              Expanded(child: _buildPeersViews()),
+            ],
+          ),
+        ),
       ],
     );
+  }
+
+  // Atlas Remote — Client/Site filter + device search toolbar for the fleet
+  // table (design annotation f-filter; net-new for MSP-scale address books).
+  // The Client filter reuses the address book's existing tag mechanism as the
+  // client grouping: picking a client selects that single tag (replacing the
+  // selection) so the peer list narrows to that client; "All clients" clears
+  // the tag selection. Search drives the shared `peerSearchText` obs that
+  // `matchPeers()` already consumes, so no new filter backend is introduced.
+  Widget _buildFleetToolbar() {
+    return Obx(() {
+      final tags = gFFI.abModel.currentAbTags.toList();
+      if (gFFI.abModel.sortTags.value) {
+        tags.sort();
+      }
+      final selected = gFFI.abModel.selectedTags;
+      // Single-select client value: the sole selected normal tag, else 'all'.
+      final normalSelected =
+          selected.where((t) => t != kUntagged && tags.contains(t)).toList();
+      final currentClient =
+          normalSelected.length == 1 ? normalSelected.first.toString() : _kAllClients;
+
+      final total = gFFI.abModel.currentAbPeers.length;
+      final shown = _visibleFleetCount();
+
+      return Row(
+        children: [
+          _buildClientFilter(tags, currentClient),
+          const SizedBox(width: 8),
+          Expanded(child: _buildFleetSearch()),
+          const SizedBox(width: 12),
+          Text(
+            '$shown ${translate('of')} $total ${translate('devices')}',
+            style: const TextStyle(
+              fontFamily: kAtlasBodyFont,
+              fontSize: 12,
+              color: _kAbInk500,
+            ),
+          ),
+        ],
+      );
+    });
+  }
+
+  Widget _buildClientFilter(List<dynamic> tags, String currentClient) {
+    final items = <DropdownMenuItem<String>>[
+      DropdownMenuItem(
+        value: _kAllClients,
+        child: Text(
+          '${translate('All')} ${translate('clients')}',
+          style: const TextStyle(fontSize: 12.5, fontFamily: kAtlasBodyFont),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      ...tags.map((e) => DropdownMenuItem(
+            value: e.toString(),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: gFFI.abModel.getCurrentAbTagColor(e.toString()),
+                  ),
+                ),
+                Flexible(
+                  child: Text(
+                    e.toString(),
+                    style: const TextStyle(
+                        fontSize: 12.5, fontFamily: kAtlasBodyFont),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          )),
+    ];
+    return Container(
+      width: 200,
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: _kAbCard,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _kAbBorder, width: 1),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton2<String>(
+          value: currentClient,
+          isExpanded: true,
+          isDense: true,
+          items: items,
+          onChanged: (value) {
+            gFFI.abModel.selectedTags.clear();
+            if (value != null && value != _kAllClients) {
+              gFFI.abModel.selectedTags.add(value);
+            }
+          },
+          iconStyleData: const IconStyleData(
+            icon: Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+            iconEnabledColor: _kAbInk500,
+          ),
+          buttonStyleData: const ButtonStyleData(
+            padding: EdgeInsets.zero,
+            height: 30,
+          ),
+          dropdownStyleData: DropdownStyleData(
+            maxHeight: 320,
+            decoration: BoxDecoration(
+              color: _kAbCard,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: _kAbBorder, width: 1),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFleetSearch() {
+    return Container(
+      height: 32,
+      decoration: BoxDecoration(
+        color: _kAbCard,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _kAbBorder, width: 1),
+      ),
+      child: Center(
+        child: TextField(
+          controller: peerSearchTextController,
+          onChanged: (value) => peerSearchText.value = value,
+          style: const TextStyle(fontSize: 12.5, fontFamily: kAtlasBodyFont),
+          decoration: InputDecoration(
+            isDense: true,
+            border: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+            prefixIcon: const Icon(Icons.search, size: 16, color: _kAbInk500),
+            prefixIconConstraints:
+                const BoxConstraints(minWidth: 32, minHeight: 32),
+            hintText: translate('Search devices'),
+            hintStyle: const TextStyle(
+              fontSize: 12.5,
+              fontFamily: kAtlasBodyFont,
+              color: _kAbInk500,
+            ),
+          ),
+        ).workaroundFreezeLinuxMint(),
+      ),
+    );
+  }
+
+  // Devices visible after the active tag/client filter + search — mirrors the
+  // filtering AddressBookPeersView applies, so the "N of M" count is honest.
+  int _visibleFleetCount() {
+    final search = peerSearchText.value.trim().toLowerCase();
+    return gFFI.abModel.currentAbPeers.where((p) {
+      if (!AddressBookPeersView.hitTagPublic(
+          gFFI.abModel.selectedTags, p.tags)) {
+        return false;
+      }
+      if (search.isEmpty) return true;
+      final device = p.alias.isNotEmpty ? p.alias : p.id;
+      return device.toLowerCase().contains(search) ||
+          p.username.toLowerCase().contains(search) ||
+          p.hostname.toLowerCase().contains(search) ||
+          p.tags.any((t) => t.toString().toLowerCase().contains(search));
+    }).length;
   }
 
   Widget _buildAddressBookPortrait() {
@@ -136,7 +326,7 @@ class _AddressBookState extends State<AddressBook> {
                 ),
               ),
             ).marginOnly(bottom: 12.0)),
-        _buildPeersViews()
+        Expanded(child: _buildPeersViews()),
       ],
     );
   }
@@ -355,13 +545,20 @@ class _AddressBookState extends State<AddressBook> {
     });
   }
 
+  // Returns the fleet table body itself (no Expanded wrapper) so each caller
+  // can size it: landscape wraps it in an Expanded column child, portrait in an
+  // Expanded inside its Column. On desktop the table fills the available width;
+  // on mobile the stock peer cards keep their top-left alignment.
   Widget _buildPeersViews() {
-    return Expanded(
-      child: Align(
-          alignment: Alignment.topLeft,
-          child: AddressBookPeersView(
-            menuPadding: widget.menuPadding,
-          )),
+    final view = AddressBookPeersView(
+      menuPadding: widget.menuPadding,
+    );
+    if (isDesktop || isWebDesktop) {
+      return view;
+    }
+    return Align(
+      alignment: Alignment.topLeft,
+      child: view,
     );
   }
 

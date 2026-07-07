@@ -381,6 +381,153 @@ class LoginWidgetOP extends StatelessWidget {
   }
 }
 
+// ── Atlas design tokens for the bespoke login form ──────────────────
+// Mirrors the Claude Design "Sign in to Atlas" canvas + _ds/tokens:
+//   field fill #FFFFFF · border #D1D6CD (surface-300) · radius 8px ·
+//   36px height · ink body #44403C · placeholder #858585 (ink-500) ·
+//   focus → brand-500 #6EA924 border + soft green glow.
+const Color _kAtlasFieldFill = Color(0xFFFFFFFF);
+const Color _kAtlasFieldBorder = Color(0xFFD1D6CD); // surface-300
+const Color _kAtlasInkBody = Color(0xFF44403C); // ink-700 body
+const Color _kAtlasInkHeading = Color(0xFF1C1917); // ink-900 heading
+const Color _kAtlasInkMuted = Color(0xFF858585); // ink-500 placeholder/label
+const Color _kAtlasInkLabel = Color(0xFF444241); // ink-600 field label
+const double _kAtlasFieldRadius = 8.0;
+
+/// A single Atlas-styled login field (label above a bespoke text field),
+/// preserving the controller / focusNode / errorText contract the auth
+/// flow relies on. Password mode adds an inline visibility toggle.
+class _AtlasLoginField extends StatefulWidget {
+  final String label;
+  final String hintText;
+  final TextEditingController controller;
+  final FocusNode? focusNode;
+  final String? errorText;
+  final bool obscure;
+  final TextInputType? keyboardType;
+  final bool autofillEmail;
+  final VoidCallback? onSubmitted;
+
+  const _AtlasLoginField({
+    Key? key,
+    required this.label,
+    required this.hintText,
+    required this.controller,
+    this.focusNode,
+    this.errorText,
+    this.obscure = false,
+    this.keyboardType,
+    this.autofillEmail = false,
+    this.onSubmitted,
+  }) : super(key: key);
+
+  @override
+  State<_AtlasLoginField> createState() => _AtlasLoginFieldState();
+}
+
+class _AtlasLoginFieldState extends State<_AtlasLoginField> {
+  bool _visible = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasError = widget.errorText != null;
+    final obscure = widget.obscure && !_visible;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Field label — Inter 13/500, ink-600.
+        Text(
+          translate(widget.label),
+          style: const TextStyle(
+            fontFamily: kAtlasBodyFont,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: _kAtlasInkLabel,
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: widget.controller,
+          focusNode: widget.focusNode,
+          obscureText: obscure,
+          keyboardType: widget.keyboardType,
+          autofocus: false,
+          autofillHints:
+              widget.autofillEmail ? const [AutofillHints.username] : null,
+          onSubmitted: (_) => widget.onSubmitted?.call(),
+          style: const TextStyle(
+            fontFamily: kAtlasBodyFont,
+            fontSize: 14,
+            color: _kAtlasInkBody,
+          ),
+          decoration: InputDecoration(
+            isDense: true,
+            filled: true,
+            fillColor: _kAtlasFieldFill,
+            hintText: translate(widget.hintText),
+            hintStyle: const TextStyle(
+              fontFamily: kAtlasBodyFont,
+              fontSize: 14,
+              color: _kAtlasInkMuted,
+            ),
+            // 36px effective height: 14px text + symmetric 9px padding.
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            suffixIcon: widget.obscure
+                ? IconButton(
+                    splashRadius: 18,
+                    icon: Icon(
+                      _visible
+                          ? Icons.visibility_outlined
+                          : Icons.visibility_off_outlined,
+                      size: 18,
+                      color: _kAtlasInkMuted,
+                    ),
+                    onPressed: () => setState(() => _visible = !_visible),
+                  )
+                : null,
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(_kAtlasFieldRadius),
+              borderSide: BorderSide(
+                color: hasError ? MyTheme.dark : _kAtlasFieldBorder,
+                width: 1,
+              ),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(_kAtlasFieldRadius),
+              borderSide: const BorderSide(
+                color: MyTheme.accent, // brand-500 #6EA924
+                width: 1.5,
+              ),
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(_kAtlasFieldRadius),
+              borderSide: const BorderSide(color: _kAtlasFieldBorder, width: 1),
+            ),
+          ),
+        ),
+        if (hasError)
+          Padding(
+            padding: const EdgeInsets.only(top: 6, left: 2),
+            child: SelectableText(
+              widget.errorText!,
+              style: TextStyle(
+                fontFamily: kAtlasBodyFont,
+                color: Theme.of(context).colorScheme.error,
+                fontSize: 12,
+              ),
+            ),
+          ),
+      ],
+    ).workaroundFreezeLinuxMint();
+  }
+}
+
+/// Bespoke Atlas email/password login form (annotations l-widget / l-fields).
+/// Replaces the stock RustDesk username + OIDC-provider layout with the
+/// Claude Design "Sign in to Atlas" card. The `username` controller now
+/// carries the Atlas email; the underlying auth flow (`onLogin` → gather /
+/// gFFI.userModel.login) is unchanged and load-bearing.
 class LoginWidgetUserPass extends StatelessWidget {
   final TextEditingController username;
   final TextEditingController pass;
@@ -405,50 +552,106 @@ class LoginWidgetUserPass extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-        padding: EdgeInsets.all(0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            const SizedBox(height: 8.0),
-            DialogTextField(
-                title: translate(DialogTextField.kUsernameTitle),
-                controller: username,
-                focusNode: userFocusNode,
-                prefixIcon: DialogTextField.kUsernameIcon,
-                errorText: usernameMsg),
-            PasswordWidget(
-              controller: pass,
-              autoFocus: false,
-              reRequestFocus: true,
-              errorText: passMsg,
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // ── Brand + heading (centred) ──
+          SizedBox(
+            height: 34,
+            child: Center(child: loadLogo()),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            translate('Sign in to Atlas'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: kAtlasDisplayFont,
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.3,
+              color: _kAtlasInkHeading,
             ),
-            // NOT use Offstage to wrap LinearProgressIndicator
-            if (isInProgress) const LinearProgressIndicator(),
-            const SizedBox(height: 12.0),
-            FittedBox(
-                child:
-                    Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Container(
-                height: 38,
-                width: 200,
-                child: Obx(() => ElevatedButton(
-                      child: Text(
-                        // Label-only relabel; the OIDC/account flow underneath
-                        // is unchanged (Atlas SSO wiring is a separate track).
-                        translate('Sign in with Atlas'),
-                        style: TextStyle(fontSize: 16),
-                      ),
-                      onPressed:
-                          curOP.value.isEmpty || curOP.value == 'rustdesk'
-                              ? () {
-                                  onLogin();
-                                }
-                              : null,
-                    )),
-              ),
-            ])),
-          ],
-        ));
+          ),
+          const SizedBox(height: 5),
+          Text(
+            translate('Connect this device to your Atlas-managed fleet.'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: kAtlasBodyFont,
+              fontSize: 12.5,
+              height: 1.5,
+              color: _kAtlasInkMuted,
+            ),
+          ),
+          const SizedBox(height: 24),
+
+          // ── Email ──
+          _AtlasLoginField(
+            label: 'Email',
+            hintText: 'you@yourpractice.co.za',
+            controller: username,
+            focusNode: userFocusNode,
+            errorText: usernameMsg,
+            keyboardType: TextInputType.emailAddress,
+            autofillEmail: true,
+            onSubmitted: onLogin,
+          ),
+          const SizedBox(height: 14),
+
+          // ── Password ──
+          _AtlasLoginField(
+            label: 'Password',
+            hintText: 'Enter your password',
+            controller: pass,
+            errorText: passMsg,
+            obscure: true,
+            onSubmitted: onLogin,
+          ),
+
+          // NOT use Offstage to wrap LinearProgressIndicator
+          if (isInProgress)
+            const Padding(
+              padding: EdgeInsets.only(top: 12),
+              child: LinearProgressIndicator(),
+            ),
+          const SizedBox(height: 18),
+
+          // ── Primary "Sign in with Atlas" (green, full-width, 44px) ──
+          SizedBox(
+            height: 44,
+            width: double.infinity,
+            child: Obx(() => ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: MyTheme.accent, // brand-500 #6EA924
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: MyTheme.accent.withOpacity(0.5),
+                    disabledForegroundColor: Colors.white.withOpacity(0.8),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(_kAtlasFieldRadius),
+                    ),
+                  ),
+                  onPressed:
+                      curOP.value.isEmpty || curOP.value == 'rustdesk'
+                          ? () => onLogin()
+                          : null,
+                  child: Text(
+                    // Label-only relabel; the OIDC/account flow underneath
+                    // is unchanged (Atlas SSO wiring is a separate track).
+                    translate('Sign in with Atlas'),
+                    style: const TextStyle(
+                      fontFamily: kAtlasBodyFont,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                )),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -618,62 +821,56 @@ Future<bool?> loginDialog() async {
           );
         });
 
+    // The Atlas card carries its own "Sign in to Atlas" heading inside the
+    // content (per the Claude Design canvas), so the dialog title bar is just
+    // the close affordance (load-bearing — must stay reachable), right-aligned.
     final title = Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      mainAxisAlignment: MainAxisAlignment.end,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          translate('Login'),
-        ).marginOnly(top: MyTheme.dialogPadding),
         MouseRegion(
           onEnter: (_) => setState(() => isCloseHovered = true),
           onExit: (_) => setState(() => isCloseHovered = false),
           child: InkWell(
             child: Icon(
               Icons.close,
-              size: 25,
+              size: 20,
               // No need to handle the branch of null.
               // Because we can ensure the color is not null when debug.
-              color: isCloseHovered
-                  ? Colors.white
-                  : Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.color
-                      ?.withOpacity(0.55),
+              color: isCloseHovered ? Colors.white : _kAtlasInkMuted,
             ),
             onTap: onDialogCancel,
             hoverColor: Colors.red,
-            borderRadius: BorderRadius.circular(5),
+            borderRadius: BorderRadius.circular(7),
           ),
-        ).marginOnly(top: 10, right: 15),
+        ).marginOnly(top: 12, right: 12),
       ],
     );
-    final titlePadding = EdgeInsets.fromLTRB(MyTheme.dialogPadding, 0, 0, 0);
+    final titlePadding = EdgeInsets.zero;
 
     return CustomAlertDialog(
       title: title,
       titlePadding: titlePadding,
-      contentBoxConstraints: BoxConstraints(minWidth: 400),
-      content: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          const SizedBox(
-            height: 8.0,
-          ),
-          LoginWidgetUserPass(
-            username: username,
-            pass: password,
-            usernameMsg: usernameMsg,
-            passMsg: passwordMsg,
-            isInProgress: isInProgress,
-            curOP: curOP,
-            onLogin: onLogin,
-            userFocusNode: userFocusNode,
-          ),
-          thirdAuthWidget(),
-        ],
-      ),
+      contentBoxConstraints: BoxConstraints(minWidth: 340, maxWidth: 340),
+      content: LayoutBuilder(builder: (context, constraints) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            LoginWidgetUserPass(
+              username: username,
+              pass: password,
+              usernameMsg: usernameMsg,
+              passMsg: passwordMsg,
+              isInProgress: isInProgress,
+              curOP: curOP,
+              onLogin: onLogin,
+              userFocusNode: userFocusNode,
+            ),
+            thirdAuthWidget(),
+          ],
+        );
+      }),
       onCancel: onDialogCancel,
       onSubmit: onLogin,
     );

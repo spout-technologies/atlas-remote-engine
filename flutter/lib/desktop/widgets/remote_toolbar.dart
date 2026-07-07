@@ -327,13 +327,35 @@ class ToolbarState {
 }
 
 class _ToolbarTheme {
-  static const Color blueColor = MyTheme.button;
-  static const Color hoverBlueColor = MyTheme.accent;
-  static Color inactiveColor = Colors.grey[800]!;
-  static Color hoverInactiveColor = Colors.grey[850]!;
+  // ── Atlas floating-toolbar tokens ────────────────────────────────────
+  // The in-session toolbar floats over the remote screen, so it is always
+  // dark regardless of app theme (design: rgba(28,28,30,0.82) + blur, white
+  // glyphs, one green accent, red close). These tokens are the single source
+  // of truth for the toolbar's colours; the button renderers below treat the
+  // `color`/`hoverColor` props as the GLYPH colour on a transparent tile.
+  static const Color atlasSurface = Color(0xF01C1C1E); // dark pill bg (~0.94)
+  static const Color atlasInk = Color(0xF2FFFFFF); // idle glyph (white ~0.95)
+  static const Color atlasInkDim = Color(0x99FFFFFF); // muted glyph (~0.6)
+  static const Color atlasAccent = MyTheme.accent; // Atlas green #6EA924
+  static const Color atlasHairline = Color(0x24FFFFFF); // dividers/border ~0.14
+  static const Color atlasHover = Color(0x1FFFFFFF); // hover tile overlay ~0.12
+  static const Color atlasDanger = Color(0xF2DC2626); // close/rec red (~0.95)
+  static const Color atlasDangerDim = Color(0x59DC2626); // close hover tile
 
-  static const Color redColor = Colors.redAccent;
-  static const Color hoverRedColor = Colors.red;
+  // The glyph colour used by idle top-level buttons. Green is reserved for
+  // active/selected/pinned states, so idle glyphs read as near-white ink.
+  static const Color blueColor = atlasInk;
+  static const Color hoverBlueColor = atlasInk;
+  // "Off/unselected" glyph — a dimmed white so unselected monitors etc. recede
+  // without the old opaque-grey tile look.
+  static Color inactiveColor = atlasInkDim;
+  static Color hoverInactiveColor = atlasInk;
+  // Active/selected/pinned accent (green), used where a control is "on".
+  static const Color accentColor = atlasAccent;
+  static const Color hoverAccentColor = atlasAccent;
+
+  static const Color redColor = atlasDanger;
+  static const Color hoverRedColor = atlasDanger;
   // kMinInteractiveDimension
   static const double height = 20.0;
   static const double dividerHeight = 12.0;
@@ -341,22 +363,25 @@ class _ToolbarTheme {
   static const double buttonSize = 32;
   static const double buttonHMargin = 2;
   static const double buttonVMargin = 6;
-  static const double iconRadius = 8;
+  static const double iconRadius = 8; // design: ~7–8px per button tile
   static const double elevation = 3;
 
   static double dividerSpaceToAction = isWindows ? 8 : 14;
 
-  static double menuBorderRadius = isWindows ? 5.0 : 7.0;
+  static double menuBorderRadius = 8.0; // Atlas standard radius for popovers
   static EdgeInsets menuPadding = isWindows
       ? EdgeInsets.fromLTRB(4, 12, 4, 12)
       : EdgeInsets.fromLTRB(6, 14, 6, 14);
-  static const double menuButtonBorderRadius = 3.0;
+  static const double menuButtonBorderRadius = 6.0;
 
-  static Color borderColor(BuildContext context) =>
-      MyTheme.color(context).border3 ?? MyTheme.border;
+  // The floating toolbar's own surface + hairline are theme-independent (it
+  // sits over the remote screen), so return the Atlas dark-pill tokens rather
+  // than the app-theme menu-bar colours.
+  static Color get toolbarSurface => atlasSurface;
 
-  static Color? dividerColor(BuildContext context) =>
-      MyTheme.color(context).divider;
+  static Color borderColor(BuildContext context) => atlasHairline;
+
+  static Color? dividerColor(BuildContext context) => atlasHairline;
 
   static MenuStyle defaultMenuStyle(BuildContext context) => MenuStyle(
         side: MaterialStateProperty.all(BorderSide(
@@ -854,7 +879,9 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
     }
     if (!isWeb) toolbarItems.add(_RecordMenu());
     toolbarItems.add(_CloseMenu(id: widget.id, ffi: widget.ffi));
-    final toolbarBorderRadius = BorderRadius.all(Radius.circular(4.0));
+    // Atlas: the floating pill uses a rounded surface (design ~12px) and its
+    // own dark bg + hairline border, independent of app theme.
+    final toolbarBorderRadius = BorderRadius.all(Radius.circular(12.0));
     // innerAxis: how the toolbar icons themselves flow.
     // outerAxis: how the toolbar block and the handle stack against each other
     // (perpendicular to the dock edge, so the handle hangs off the interior face).
@@ -865,13 +892,9 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
         : SizedBox(height: _ToolbarTheme.buttonHMargin * 2);
     final toolbarMaterial = Material(
       elevation: _ToolbarTheme.elevation,
-      shadowColor: MyTheme.color(context).shadow,
+      shadowColor: Colors.black.withOpacity(0.35),
       borderRadius: toolbarBorderRadius,
-      color: Theme.of(context)
-          .menuBarTheme
-          .style
-          ?.backgroundColor
-          ?.resolve(MaterialState.values.toSet()),
+      color: _ToolbarTheme.toolbarSurface,
       child: SingleChildScrollView(
         scrollDirection: innerAxis,
         child: Theme(
@@ -946,9 +969,9 @@ class _PinMenu extends StatelessWidget {
         tooltip: state.pin ? 'Unpin Toolbar' : 'Pin Toolbar',
         onPressed: state.switchPin,
         color:
-            state.pin ? _ToolbarTheme.blueColor : _ToolbarTheme.inactiveColor,
+            state.pin ? _ToolbarTheme.accentColor : _ToolbarTheme.inactiveColor,
         hoverColor: state.pin
-            ? _ToolbarTheme.hoverBlueColor
+            ? _ToolbarTheme.hoverAccentColor
             : _ToolbarTheme.hoverInactiveColor,
       ),
     );
@@ -968,10 +991,10 @@ class _MobileActionMenu extends StatelessWidget {
           onPressed: () => ffi.dialogManager.setMobileActionsOverlayVisible(
               !ffi.dialogManager.mobileActionsOverlayVisible.value),
           color: ffi.dialogManager.mobileActionsOverlayVisible.isTrue
-              ? _ToolbarTheme.blueColor
+              ? _ToolbarTheme.accentColor
               : _ToolbarTheme.inactiveColor,
           hoverColor: ffi.dialogManager.mobileActionsOverlayVisible.isTrue
-              ? _ToolbarTheme.hoverBlueColor
+              ? _ToolbarTheme.hoverAccentColor
               : _ToolbarTheme.hoverInactiveColor,
         ));
   }
@@ -1142,7 +1165,7 @@ class _MonitorMenu extends StatelessWidget {
         '${i + 1}',
         style: TextStyle(
           color: i == curDisplay
-              ? _ToolbarTheme.blueColor
+              ? _ToolbarTheme.accentColor
               : _ToolbarTheme.inactiveColor,
           fontSize: 12,
           fontWeight: FontWeight.bold,
@@ -1161,7 +1184,7 @@ class _MonitorMenu extends StatelessWidget {
           Widget? monitorsIcon;
           if (isAllMonitors) {
             monitorsIcon = globalMonitorsWidget(
-                width, Colors.white, _ToolbarTheme.blueColor);
+                width, Colors.white, _ToolbarTheme.accentColor);
           }
           return _IconMenuButton(
             tooltip: isMulti
@@ -1173,10 +1196,10 @@ class _MonitorMenu extends StatelessWidget {
             vMargin: isMulti ? null : 12,
             topLevel: false,
             color: i == display.value
-                ? _ToolbarTheme.blueColor
+                ? _ToolbarTheme.accentColor
                 : _ToolbarTheme.inactiveColor,
             hoverColor: i == display.value
-                ? _ToolbarTheme.hoverBlueColor
+                ? _ToolbarTheme.hoverAccentColor
                 : _ToolbarTheme.hoverInactiveColor,
             width: isAllMonitors ? width.value : null,
             icon: isAllMonitors
@@ -1252,9 +1275,9 @@ class _MonitorMenu extends StatelessWidget {
                 child: Text(
               '${i + 1}',
               style: TextStyle(
-                color: display.value == i
-                    ? activeTextColor
-                    : _ToolbarTheme.inactiveColor,
+                // Unselected mini-monitors sit on a white tile, so use a dark
+                // ink here rather than the toolbar's dim-white glyph token.
+                color: display.value == i ? activeTextColor : Colors.black54,
                 fontSize: fontSize,
                 fontWeight: FontWeight.bold,
               ),
@@ -2817,10 +2840,20 @@ class _IconMenuButtonState extends State<_IconMenuButton> {
   @override
   Widget build(BuildContext context) {
     assert(widget.assetName != null || widget.icon != null);
+    // Atlas: the glyph is tinted by `color`/`hoverColor` (idle = near-white
+    // ink, green when active, red for close). The tile itself stays
+    // transparent, gaining only a faint white overlay on hover — matching the
+    // floating design instead of filling every button with a solid colour.
+    final bool isCloseAction =
+        widget.color == _ToolbarTheme.redColor || widget.hoverColor == _ToolbarTheme.redColor;
+    final Color glyphColor = hover ? widget.hoverColor : widget.color;
+    final Color tileColor = hover
+        ? (isCloseAction ? _ToolbarTheme.atlasDangerDim : _ToolbarTheme.atlasHover)
+        : Colors.transparent;
     final icon = widget.icon ??
         SvgPicture.asset(
           widget.assetName!,
-          colorFilter: ColorFilter.mode(Colors.white, BlendMode.srcIn),
+          colorFilter: ColorFilter.mode(glyphColor, BlendMode.srcIn),
           width: _ToolbarTheme.buttonSize,
           height: _ToolbarTheme.buttonSize,
         );
@@ -2844,7 +2877,7 @@ class _IconMenuButtonState extends State<_IconMenuButton> {
                     decoration: BoxDecoration(
                       borderRadius:
                           BorderRadius.circular(_ToolbarTheme.iconRadius),
-                      color: hover ? widget.hoverColor : widget.color,
+                      color: tileColor,
                     ),
                     child: icon)),
           )),
@@ -2902,10 +2935,15 @@ class _IconSubmenuButtonState extends State<_IconSubmenuButton> {
   @override
   Widget build(BuildContext context) {
     assert(widget.svg != null || widget.icon != null);
+    // Atlas: tint the glyph (idle = near-white ink, green when active); keep
+    // the tile transparent with a faint white hover overlay, matching the
+    // floating design rather than a solid-colour button.
+    final Color glyphColor = hover ? widget.hoverColor : widget.color;
+    final Color tileColor = hover ? _ToolbarTheme.atlasHover : Colors.transparent;
     final icon = widget.icon ??
         SvgPicture.asset(
           widget.svg!,
-          colorFilter: ColorFilter.mode(Colors.white, BlendMode.srcIn),
+          colorFilter: ColorFilter.mode(glyphColor, BlendMode.srcIn),
           width: _ToolbarTheme.buttonSize,
           height: _ToolbarTheme.buttonSize,
         );
@@ -2927,7 +2965,7 @@ class _IconSubmenuButtonState extends State<_IconSubmenuButton> {
                         decoration: BoxDecoration(
                           borderRadius:
                               BorderRadius.circular(_ToolbarTheme.iconRadius),
-                          color: hover ? widget.hoverColor : widget.color,
+                          color: tileColor,
                         ),
                         child: icon))),
             menuChildren: widget
@@ -3291,7 +3329,8 @@ class _DraggableShowHideState extends State<_DraggableShowHide> {
         child: Icon(
           widget.isHorizontal ? Icons.drag_indicator : Icons.drag_handle,
           size: 20,
-          color: MyTheme.color(context).drag_indicator,
+          // Atlas: dim-white grip on the dark strip.
+          color: _ToolbarTheme.atlasInkDim,
         ),
         feedback: widget,
         onDragStarted: () {
@@ -3341,7 +3380,11 @@ class _DraggableShowHideState extends State<_DraggableShowHide> {
     }
 
     final axis = widget.isHorizontal ? Axis.horizontal : Axis.vertical;
-    final child = Flex(
+    // Atlas: the strip's action icons (fullscreen, minimize, collapse) sit on
+    // the dark floating surface, so default them to near-white ink.
+    final child = IconTheme.merge(
+      data: const IconThemeData(color: _ToolbarTheme.atlasInk),
+      child: Flex(
       direction: axis,
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -3411,16 +3454,14 @@ class _DraggableShowHideState extends State<_DraggableShowHide> {
             }
           })
       ],
-    );
+    ));
     return TextButtonTheme(
       data: TextButtonThemeData(style: buttonStyle),
       child: Container(
         decoration: BoxDecoration(
-          color: Theme.of(context)
-              .menuBarTheme
-              .style
-              ?.backgroundColor
-              ?.resolve(MaterialState.values.toSet()),
+          // Atlas: the drag/collapse strip shares the floating pill's dark
+          // surface + hairline so it reads as one piece over the remote screen.
+          color: _ToolbarTheme.toolbarSurface,
           border: Border.all(
             color: _ToolbarTheme.borderColor(context),
             width: 1,

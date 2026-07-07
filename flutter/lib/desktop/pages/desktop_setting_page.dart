@@ -42,6 +42,24 @@ const Color _accentColor = MyTheme.accent;
 const String _kSettingPageControllerTag = 'settingPageController';
 const String _kSettingPageTabKeyTag = 'settingPageTabKey';
 
+// ── Atlas design tokens (Atlas Remote — Desktop UI spec) ──────────────
+// Surfaces, ink and radii sourced from _ds/tokens/colors.css. Applied to
+// the settings rail, cards and the Network "Managed by Atlas" panel so no
+// stock RustDesk blue/grey survives. MyTheme.accent is the Atlas green.
+const Color _kAtlasPage = Color(0xFFF7F9F6); // surface-50 (page)
+const Color _kAtlasCard = Color(0xFFFFFFFF); // card
+const Color _kAtlasBorder = Color(0xFFD1D6CD); // surface-300 (border)
+const Color _kAtlasInkHeading = Color(0xFF1C1917); // ink-900
+const Color _kAtlasInkBody = Color(0xFF44403C); // ink-700
+const Color _kAtlasInkLabel = Color(0xFF858585); // ink-500
+const Color _kAtlasAccentPale = Color(0xFFF4F8EC); // brand-50 (active pill)
+const Color _kAtlasAccentDark = Color(0xFF426516); // brand-700 (active text)
+const Color _kAtlasInfoBg = Color(0xFFEFF6FF); // info-50
+const Color _kAtlasInfoBorder = Color(0xFFBFDBFE); // info-200
+const Color _kAtlasInfoInk = Color(0xFF1D4ED8); // info-700
+const double _kAtlasCardRadius = 12.0;
+const double _kAtlasCtrlRadius = 8.0;
+
 class _TabInfo {
   late final SettingsTabKey key;
   late final String label;
@@ -280,8 +298,12 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
       backgroundColor: Theme.of(context).colorScheme.background,
       body: _buildBlock(
         children: <Widget>[
-          SizedBox(
+          Container(
             width: _kTabWidth,
+            decoration: const BoxDecoration(
+              color: _kAtlasPage,
+              border: Border(right: BorderSide(color: _kAtlasBorder, width: 1)),
+            ),
             child: Column(
               children: [
                 _header(context),
@@ -289,7 +311,6 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
               ],
             ),
           ),
-          const VerticalDivider(width: 1),
           Expanded(
             child: Container(
               color: Theme.of(context).scaffoldBackgroundColor,
@@ -310,9 +331,11 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
       translate('Settings'),
       textAlign: TextAlign.left,
       style: const TextStyle(
-        color: _accentColor,
+        fontFamily: kAtlasDisplayFont,
+        color: _kAtlasInkHeading,
         fontSize: _kTitleFontSize,
-        fontWeight: FontWeight.w400,
+        fontWeight: FontWeight.w700,
+        letterSpacing: -0.3,
       ),
     );
     return Row(
@@ -355,39 +378,46 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
   Widget _listItem({required _TabInfo tab}) {
     return Obx(() {
       bool selected = tab.key == selectedTab.value;
-      return SizedBox(
+      // Atlas rail item: selected state is a pale-green pill (brand-50 fill,
+      // brand-700 label, green icon); idle state is muted ink. Replaces the
+      // stock left accent bar.
+      return Container(
         width: _kTabWidth,
         height: _kTabHeight,
-        child: InkWell(
-          onTap: () {
-            if (selectedTab.value != tab.key) {
-              int index = DesktopSettingPage.tabKeys.indexOf(tab.key);
-              if (index == -1) {
-                return;
+        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+        decoration: BoxDecoration(
+          color: selected ? _kAtlasAccentPale : Colors.transparent,
+          borderRadius: BorderRadius.circular(_kAtlasCtrlRadius),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(_kAtlasCtrlRadius),
+            onTap: () {
+              if (selectedTab.value != tab.key) {
+                int index = DesktopSettingPage.tabKeys.indexOf(tab.key);
+                if (index == -1) {
+                  return;
+                }
+                controller.jumpToPage(index);
               }
-              controller.jumpToPage(index);
-            }
-            selectedTab.value = tab.key;
-          },
-          child: Row(children: [
-            Container(
-              width: 4,
-              height: _kTabHeight * 0.7,
-              color: selected ? _accentColor : null,
-            ),
-            Icon(
-              selected ? tab.selected : tab.unselected,
-              color: selected ? _accentColor : null,
-              size: 20,
-            ).marginOnly(left: 13, right: 10),
-            Text(
-              translate(tab.label),
-              style: TextStyle(
-                  color: selected ? _accentColor : null,
-                  fontWeight: FontWeight.w400,
-                  fontSize: _kContentFontSize),
-            ),
-          ]),
+              selectedTab.value = tab.key;
+            },
+            child: Row(children: [
+              Icon(
+                selected ? tab.selected : tab.unselected,
+                color: selected ? _accentColor : _kAtlasInkLabel,
+                size: 18,
+              ).marginOnly(left: 12, right: 10),
+              Text(
+                translate(tab.label),
+                style: TextStyle(
+                    color: selected ? _kAtlasAccentDark : _kAtlasInkBody,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    fontSize: 13.5),
+              ),
+            ]),
+          ),
         ),
       );
     });
@@ -1604,17 +1634,67 @@ class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
   Widget build(BuildContext context) {
     super.build(context);
     return ListView(controller: scrollController, children: [
+      _managedByAtlasBanner(),
       _lock(locked, 'Unlock Network Settings', () {
         locked = false;
         setState(() => {});
       }),
+      // Locked/read-only by default: the Atlas relay is baked into the build,
+      // so the user cannot change servers. The underlying controls remain
+      // present (load-bearing for admin/unlocked builds) but are dimmed and
+      // non-interactive while `locked`, matching the "Managed by Atlas" spec.
       preventMouseKeyBuilder(
         block: locked,
-        child: Column(children: [
-          network(context),
-        ]),
+        child: Opacity(
+          opacity: locked ? 0.6 : 1.0,
+          child: Column(children: [
+            network(context),
+          ]),
+        ),
       ),
     ]).marginOnly(bottom: _kListViewBottomMargin);
+  }
+
+  // "Managed by Atlas" notice — network settings are centrally configured for
+  // the organisation. Uses the info-tone tokens from the design spec.
+  Widget _managedByAtlasBanner() {
+    return Row(
+      children: [
+        Flexible(
+          child: SizedBox(
+            width: _kCardFixedWidth,
+            child: Container(
+              margin: const EdgeInsets.only(left: _kCardLeftMargin, top: 15),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: _kAtlasInfoBg,
+                border: Border.all(color: _kAtlasInfoBorder, width: 1),
+                borderRadius: BorderRadius.circular(_kAtlasCtrlRadius),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.info_outline,
+                          size: 16, color: _kAtlasInfoInk)
+                      .marginOnly(top: 1, right: 10),
+                  Expanded(
+                    child: Text(
+                      translate(
+                          'Managed by Atlas — network settings are centrally configured for your organisation. Contact your administrator to change them.'),
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        color: _kAtlasInfoInk,
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget network(BuildContext context) {
@@ -1708,6 +1788,7 @@ class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
     final divider = const Divider(height: 1, indent: 16, endIndent: 16);
     return _Card(
       title: 'Network',
+      subtitle: 'Relay, direct access, and proxy configuration.',
       children: [
         Container(
           child: Column(
@@ -2074,7 +2155,11 @@ class _AccountState extends State<_Account> {
     return ListView(
       controller: scrollController,
       children: [
-        _Card(title: 'Account', children: [accountAction(), useInfo()]),
+        _Card(
+            title: 'Account',
+            subtitle:
+                "Your Atlas identity connects this device to your practice's fleet.",
+            children: [accountAction(), useInfo()]),
       ],
     ).marginOnly(bottom: _kListViewBottomMargin);
   }
@@ -2422,73 +2507,154 @@ class _AboutState extends State<_About> {
       final version = data['version'].toString();
       final buildDate = data['buildDate'].toString();
       final fingerprint = data['fingerprint'].toString();
-      const linkStyle = TextStyle(decoration: TextDecoration.underline);
       final scrollController = ScrollController();
+
+      // Atlas About: centred brand lockup + mono version line, an atlasos.work
+      // links row, then the AGPL attribution card. The copyright + licence
+      // text is upstream AGPL attribution and is kept verbatim — the fork is
+      // public AGPL and must link its source.
+      Widget aboutLink(String label, String url) {
+        return InkWell(
+          borderRadius: BorderRadius.circular(6),
+          onTap: () => launchUrlString(url),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: Text(
+              '${translate(label)} ↗',
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+                color: _accentColor,
+              ),
+            ),
+          ),
+        );
+      }
+
+      final brand = Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          const SizedBox(height: 4),
+          // Typographic Atlas wordmark (self-contained; no SVG dependency).
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 8,
+                height: 8,
+                margin: const EdgeInsets.only(right: 8, bottom: 2),
+                decoration: const BoxDecoration(
+                  color: _accentColor,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              Text(
+                'Atlas Remote',
+                style: const TextStyle(
+                  fontFamily: kAtlasDisplayFont,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -0.3,
+                  color: _kAtlasInkHeading,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          SelectionArea(
+            child: Text(
+              '${translate('Version')} $version · $buildDate',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: kAtlasMonoFont,
+                fontSize: 12,
+                color: _kAtlasInkLabel,
+              ),
+            ),
+          ),
+          if (!isWeb)
+            SelectionArea(
+              child: Text(
+                '${translate('Fingerprint')}: $fingerprint',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: kAtlasMonoFont,
+                  fontSize: 11,
+                  color: _kAtlasInkLabel,
+                ),
+              ).marginOnly(top: 4),
+            ),
+          const SizedBox(height: 18),
+          const Divider(height: 1, color: _kAtlasBorder),
+          const SizedBox(height: 16),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 6,
+            children: [
+              aboutLink('Privacy Statement', 'https://atlasos.work/privacy'),
+              aboutLink('Terms of Service', 'https://atlasos.work/terms'),
+              aboutLink('Website', 'https://atlasos.work'),
+            ],
+          ),
+        ],
+      );
+
+      // AGPL attribution — kept verbatim, restyled to the Atlas sage card.
+      final agplCard = Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(top: 20),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: _kAtlasPage,
+          border: Border.all(color: _kAtlasBorder, width: 1),
+          borderRadius: BorderRadius.circular(_kAtlasCtrlRadius),
+        ),
+        child: SelectionArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Copyright © ${DateTime.now().toString().substring(0, 4)} Purslane Ltd.\n$license',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: _kAtlasInkBody,
+                  height: 1.6,
+                ),
+              ),
+              Text(
+                translate('Slogan_tip'),
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: _kAtlasInkHeading,
+                  height: 1.6,
+                ),
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: aboutLink('View Source',
+                        'https://github.com/spout-technologies/atlas-remote-engine')
+                    .marginOnly(top: 6, left: -6),
+              ),
+            ],
+          ),
+        ),
+      );
+
       return SingleChildScrollView(
         controller: scrollController,
         child: _Card(title: translate('About Atlas Remote'), children: [
           Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(
-                height: 8.0,
-              ),
-              SelectionArea(
-                  child: Text('${translate('Version')}: $version')
-                      .marginSymmetric(vertical: 4.0)),
-              SelectionArea(
-                  child: Text('${translate('Build Date')}: $buildDate')
-                      .marginSymmetric(vertical: 4.0)),
-              if (!isWeb)
-                SelectionArea(
-                    child: Text('${translate('Fingerprint')}: $fingerprint')
-                        .marginSymmetric(vertical: 4.0)),
-              InkWell(
-                  onTap: () {
-                    launchUrlString('https://atlasos.work/privacy');
-                  },
-                  child: Text(
-                    translate('Privacy Statement'),
-                    style: linkStyle,
-                  ).marginSymmetric(vertical: 4.0)),
-              InkWell(
-                  onTap: () {
-                    launchUrlString('https://atlasos.work');
-                  },
-                  child: Text(
-                    translate('Website'),
-                    style: linkStyle,
-                  ).marginSymmetric(vertical: 4.0)),
-              Container(
-                // Atlas ink (brand) rather than RustDesk blue. The copyright
-                // + licence text below is upstream AGPL attribution and is
-                // intentionally left intact.
-                decoration: const BoxDecoration(color: MyTheme.dark),
-                padding:
-                    const EdgeInsets.symmetric(vertical: 24, horizontal: 8),
-                child: SelectionArea(
-                    child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Copyright © ${DateTime.now().toString().substring(0, 4)} Purslane Ltd.\n$license',
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          Text(
-                            translate('Slogan_tip'),
-                            style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white),
-                          )
-                        ],
-                      ),
-                    ),
-                  ],
-                )),
-              ).marginSymmetric(vertical: 4.0)
+              brand,
+              agplCard,
+              Text(
+                '© ${DateTime.now().toString().substring(0, 4)} Spout Technologies (Pty) Ltd. All rights reserved.',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 11, color: _kAtlasInkLabel),
+              ).marginOnly(top: 16),
             ],
           ).marginOnly(left: _kContentHMargin)
         ]),
@@ -2505,32 +2671,59 @@ class _AboutState extends State<_About> {
 Widget _Card(
     {required String title,
     required List<Widget> children,
-    List<Widget>? title_suffix}) {
+    List<Widget>? title_suffix,
+    String? subtitle}) {
+  // Atlas card: white surface, 12px radius, hairline sage border, display
+  // font heading + optional muted subtitle. Replaces the stock sage/elevated
+  // RustDesk card so the settings canvases read as Atlas panels.
   return Row(
     children: [
       Flexible(
         child: SizedBox(
           width: _kCardFixedWidth,
           child: Card(
+            color: _kAtlasCard,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(_kAtlasCardRadius),
+              side: const BorderSide(color: _kAtlasBorder, width: 1),
+            ),
             child: Column(
               children: [
-                Row(
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                        child: Text(
-                      translate(title),
-                      textAlign: TextAlign.start,
-                      style: const TextStyle(
-                        fontSize: _kTitleFontSize,
-                      ),
-                    )),
-                    ...?title_suffix
+                    Row(
+                      children: [
+                        Expanded(
+                            child: Text(
+                          translate(title),
+                          textAlign: TextAlign.start,
+                          style: const TextStyle(
+                            fontFamily: kAtlasDisplayFont,
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                            color: _kAtlasInkHeading,
+                          ),
+                        )),
+                        ...?title_suffix
+                      ],
+                    ),
+                    if (subtitle != null)
+                      Text(
+                        translate(subtitle),
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: _kAtlasInkLabel,
+                          height: 1.35,
+                        ),
+                      ).marginOnly(top: 3),
                   ],
-                ).marginOnly(left: _kContentHMargin, top: 10, bottom: 10),
+                ).marginOnly(left: _kContentHMargin, top: 12, bottom: 10),
                 ...children
                     .map((e) => e.marginOnly(top: 4, right: _kContentHMargin)),
               ],
-            ).marginOnly(bottom: 10),
+            ).marginOnly(bottom: 12),
           ).marginOnly(left: _kCardLeftMargin, top: 15),
         ),
       ),

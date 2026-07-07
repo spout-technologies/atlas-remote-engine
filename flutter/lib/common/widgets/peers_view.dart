@@ -565,6 +565,7 @@ class RecentPeersView extends BasePeersView {
 // Atlas Remote design tokens for the device table.
 const Color _kAtlasCard = Color(0xFFFFFFFF);
 const Color _kAtlasBorder = Color(0xFFD1D6CD);
+const Color _kAtlasFill = Color(0xFFEAEEE7);
 const Color _kAtlasInk900 = Color(0xFF1C1917);
 const Color _kAtlasInk700 = Color(0xFF44403C);
 const Color _kAtlasInk500 = Color(0xFF858585);
@@ -728,6 +729,234 @@ class _AtlasRecentDeviceRowState extends State<_AtlasRecentDeviceRow> {
   }
 }
 
+// A single device row in the Atlas Address Book / Fleet table. The peer data
+// is real (id/hostname/username/online/tags from the address-book model).
+//
+// Client / Site (annotation f-clientcol) is mapped from the peer's address-book
+// tags — the existing grouping mechanism in RustDesk's address book — rendered
+// as a coloured chip using the tag's configured colour. No backend field is
+// invented: an untagged peer shows "—". Connecting goes through
+// `connectInPeerTab(..., PeerTabIndex.ab)` so the address book's alias/password
+// handling is preserved.
+class _AtlasAbDeviceRow extends StatefulWidget {
+  final Peer peer;
+  const _AtlasAbDeviceRow({required this.peer, Key? key}) : super(key: key);
+
+  @override
+  State<_AtlasAbDeviceRow> createState() => _AtlasAbDeviceRowState();
+}
+
+class _AtlasAbDeviceRowState extends State<_AtlasAbDeviceRow> {
+  bool _hover = false;
+
+  void _connect() =>
+      connectInPeerTab(context, widget.peer, PeerTabIndex.ab);
+
+  @override
+  Widget build(BuildContext context) {
+    final peer = widget.peer;
+    final device = peer.alias.isNotEmpty ? peer.alias : formatID(peer.id);
+    final user =
+        peer.username.isNotEmpty ? peer.username : (peer.hostname.isNotEmpty ? peer.hostname : '—');
+    final tags = peer.tags.map((e) => e.toString()).toList();
+    final access = peer.online ? translate('Online') : translate('Offline');
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hover = true),
+      onExit: (_) => setState(() => _hover = false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onDoubleTap: _connect,
+        child: Container(
+          color: _hover ? _kAtlasGreenPale.withOpacity(0.4) : Colors.transparent,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: const BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: _kAtlasBorder, width: 1),
+            ),
+          ),
+          child: Row(
+            children: [
+              // DEVICE — platform glyph + mono id/alias, with online dot
+              Expanded(
+                flex: 4,
+                child: Row(
+                  children: [
+                    getPlatformImage(peer.platform, size: 18)
+                        .marginOnly(right: 8),
+                    Flexible(
+                      child: Text(
+                        device,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: kAtlasMonoFont,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: _kAtlasInk900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // CLIENT / SITE — mapped from address-book tags (coloured chip)
+              Expanded(
+                flex: 3,
+                child: _AtlasClientChip(tags: tags),
+              ),
+              // USER — pc username (falls back to hostname)
+              Expanded(
+                flex: 3,
+                child: Text(
+                  user,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: kAtlasBodyFont,
+                    fontSize: 13,
+                    color: _kAtlasInk700,
+                  ),
+                ),
+              ),
+              // ACCESS — online / offline
+              Expanded(
+                flex: 2,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      margin: const EdgeInsets.only(right: 6),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: peer.online
+                            ? _kAtlasGreen
+                            : const Color(0xFFB7BDB0),
+                      ),
+                    ),
+                    Flexible(
+                      child: Text(
+                        access,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontFamily: kAtlasBodyFont,
+                          fontSize: 13,
+                          color: _kAtlasInk500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Green circular connect-arrow
+              Tooltip(
+                message: translate('Connect'),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(16),
+                  onTap: _connect,
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _hover ? _kAtlasGreen : _kAtlasGreenPale,
+                    ),
+                    child: Icon(
+                      Icons.arrow_forward,
+                      size: 15,
+                      color: _hover ? Colors.white : _kAtlasGreen,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Client / Site cell for the fleet table. Renders the peer's first address-book
+// tag as a coloured chip (using the tag's configured colour) and a "+N" pill
+// when a device carries multiple tags. Untagged devices show a muted em dash.
+class _AtlasClientChip extends StatelessWidget {
+  final List<String> tags;
+  const _AtlasClientChip({required this.tags});
+
+  @override
+  Widget build(BuildContext context) {
+    if (tags.isEmpty) {
+      return const Text(
+        '—',
+        style: TextStyle(
+          fontFamily: kAtlasBodyFont,
+          fontSize: 13,
+          color: _kAtlasInk500,
+        ),
+      );
+    }
+    final primary = tags.first;
+    final color = gFFI.abModel.getCurrentAbTagColor(primary);
+    return Row(
+      children: [
+        Flexible(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.14),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 7,
+                  height: 7,
+                  margin: const EdgeInsets.only(right: 6),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: color,
+                  ),
+                ),
+                Flexible(
+                  child: Text(
+                    primary,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontFamily: kAtlasBodyFont,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                      color: _kAtlasInk700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (tags.length > 1)
+          Container(
+            margin: const EdgeInsets.only(left: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+            decoration: BoxDecoration(
+              color: _kAtlasFill,
+              borderRadius: BorderRadius.circular(5),
+            ),
+            child: Text(
+              '+${tags.length - 1}',
+              style: const TextStyle(
+                fontFamily: kAtlasBodyFont,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: _kAtlasInk500,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class FavoritePeersView extends BasePeersView {
   FavoritePeersView(
       {Key? key, EdgeInsets? menuPadding, ScrollController? scrollController})
@@ -770,18 +999,79 @@ class DiscoveredPeersView extends BasePeersView {
 }
 
 class AddressBookPeersView extends BasePeersView {
+  // Atlas Remote — the Address Book tab renders the practice's Atlas-managed
+  // fleet as a Device / Client / User / Access table (see `_AtlasAbDeviceRow`)
+  // on desktop, matching the Recent table style. Mobile keeps the stock
+  // AddressBookPeerCard so the touch UI is unchanged.
   AddressBookPeersView(
       {Key? key, EdgeInsets? menuPadding, ScrollController? scrollController})
       : super(
           key: key,
           peerTabIndex: PeerTabIndex.ab,
+          forceListLayout: isDesktop || isWebDesktop,
+          rowHeight: 52,
           peerFilter: (Peer peer) =>
               _hitTag(gFFI.abModel.selectedTags, peer.tags),
-          peerCardBuilder: (Peer peer) => AddressBookPeerCard(
-            peer: peer,
-            menuPadding: menuPadding,
-          ),
+          peerCardBuilder: (Peer peer) => (isDesktop || isWebDesktop)
+              ? _AtlasAbDeviceRow(peer: peer)
+              : AddressBookPeerCard(
+                  peer: peer,
+                  menuPadding: menuPadding,
+                ),
         );
+
+  @override
+  Widget build(BuildContext context) {
+    final peersView = super.build(context);
+    if (!(isDesktop || isWebDesktop)) {
+      return peersView;
+    }
+    // Wrap the fleet body in the same white card + header row as the Recent
+    // table (DEVICE | CLIENT | USER | ACCESS), so the two lists are consistent.
+    return Container(
+      decoration: BoxDecoration(
+        color: _kAtlasCard,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _kAtlasBorder, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: _kAtlasInk900.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: _kAtlasBorder, width: 1),
+              ),
+            ),
+            child: Row(
+              children: const [
+                Expanded(flex: 4, child: _AtlasTableHeaderCell(label: 'DEVICE')),
+                Expanded(flex: 3, child: _AtlasTableHeaderCell(label: 'CLIENT')),
+                Expanded(flex: 3, child: _AtlasTableHeaderCell(label: 'USER')),
+                Expanded(flex: 2, child: _AtlasTableHeaderCell(label: 'ACCESS')),
+                SizedBox(width: 36),
+              ],
+            ),
+          ),
+          Expanded(child: peersView),
+        ],
+      ),
+    );
+  }
+
+  // Public wrapper so the fleet toolbar can compute an honest "N of M" count
+  // using the exact same tag-hit logic this view filters by.
+  static bool hitTagPublic(List<dynamic> selectedTags, List<dynamic> idents) =>
+      _hitTag(selectedTags, idents);
 
   static bool _hitTag(List<dynamic> selectedTags, List<dynamic> idents) {
     if (selectedTags.isEmpty) {
