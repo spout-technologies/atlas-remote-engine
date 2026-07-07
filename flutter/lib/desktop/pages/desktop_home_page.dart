@@ -194,17 +194,14 @@ class _DesktopHomePageState extends State<DesktopHomePage>
 
   // Atlas design tokens (mirrors MyTheme + the Claude Design spec). Kept local
   // to the Home screen so the card layout reads self-documenting.
+  //
+  // Colour tokens are now THEME-AWARE via the atlas*Color(context) getters in
+  // common.dart: they resolve to the Atlas light hex in light mode and to the
+  // dark surfaces/ink in dark mode, so cards/text/borders adapt instead of
+  // rendering white-on-dark. Only the brand green + its pale wash are kept as
+  // constants here (green is identical in both modes).
   static const double kAtlasPanePad = 20.0;
-  static const Color kAtlasInk900 = Color(0xFF1C1917); // headings / text-heading
-  static const Color kAtlasInk700 = Color(0xFF44403C); // text-body
-  static const Color kAtlasInk600 = Color(0xFF444241); // text-secondary
-  static const Color kAtlasInk500 = Color(0xFF858585); // labels / muted
-  static const Color kAtlasCard = Color(0xFFFFFFFF);
-  static const Color kAtlasFill = Color(0xFFEAEEE7); // surface-100 sage fill
-  static const Color kAtlasBorder = Color(0xFFD1D6CD); // surface-300 border
-  static const Color kAtlasBorderTop = Color(0xFFD1D7CC); // surface-200 divider
-  static const Color kAtlasGreen = Color(0xFF6EA924); // brand-500
-  static const Color kAtlasGreenPale = Color(0xFFF4F8EC);
+  static const Color kAtlasGreen = kAtlasBrandGreen; // brand-500 (both modes)
 
   // Uppercase eyebrow / label (ink-500, 11px, ~0.08em tracking).
   Widget _buildEyebrow(BuildContext context, String text) {
@@ -213,30 +210,31 @@ class _DesktopHomePageState extends State<DesktopHomePage>
           left: kAtlasPanePad, right: kAtlasPanePad, bottom: 10),
       child: Text(
         text.toUpperCase(),
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: kAtlasBodyFont,
           fontSize: 10,
           fontWeight: FontWeight.w700,
           letterSpacing: 1.0, // 0.1em at 10px
-          color: kAtlasInk500,
+          color: atlasInkMuted(context),
         ),
       ),
     );
   }
 
-  // White card shell: radius 12, 1px border, very soft shadow.
-  Widget _buildCard({required Widget child, EdgeInsets? padding}) {
+  // Card shell: radius 12, 1px border, very soft shadow. Theme-aware surface.
+  Widget _buildCard(BuildContext context,
+      {required Widget child, EdgeInsets? padding}) {
     return Container(
       margin: const EdgeInsets.only(
           left: kAtlasPanePad, right: kAtlasPanePad, bottom: 14),
       padding: padding ?? const EdgeInsets.fromLTRB(16, 14, 16, 14),
       decoration: BoxDecoration(
-        color: kAtlasCard,
+        color: atlasCardColor(context),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: kAtlasBorder, width: 1),
+        border: Border.all(color: atlasBorderColor(context), width: 1),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF1C1917).withOpacity(0.04),
+            color: Colors.black.withOpacity(isLightTheme(context) ? 0.04 : 0.2),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -262,7 +260,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Divider(height: 1, thickness: 1, color: kAtlasBorderTop),
+        Divider(height: 1, thickness: 1, color: atlasBorderColor(context)),
         Container(
           padding: const EdgeInsets.fromLTRB(kAtlasPanePad, 14, kAtlasPanePad, 14),
           child: Obx(
@@ -277,21 +275,21 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                     children: [
                       Text(
                         translate('Allow remote control'),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: kAtlasBodyFont,
                           fontSize: 13,
                           fontWeight: FontWeight.w500,
-                          color: kAtlasInk700,
+                          color: atlasInkBody(context),
                         ),
                       ),
                       const SizedBox(height: 1),
                       Text(
                         translate('Turns incoming connections on or off.'),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: kAtlasBodyFont,
                           fontSize: 11,
                           height: 1.3,
-                          color: kAtlasInk500,
+                          color: atlasInkMuted(context),
                         ),
                       ),
                     ],
@@ -320,6 +318,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   buildIDBoard(BuildContext context) {
     final model = gFFI.serverModel;
     return _buildCard(
+      context,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -328,12 +327,12 @@ class _DesktopHomePageState extends State<DesktopHomePage>
             children: [
               Text(
                 translate("This Device's ID").toUpperCase(),
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: kAtlasBodyFont,
                   fontSize: 10,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.8, // 0.08em at 10px
-                  color: kAtlasInk500,
+                  color: atlasInkMuted(context),
                 ),
               ),
               buildPopupMenu(context),
@@ -359,13 +358,13 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                       border: InputBorder.none,
                       contentPadding: EdgeInsets.symmetric(vertical: 4),
                     ),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: kAtlasMonoFont,
                       fontSize: 25,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.5, // 0.02em at 25px
                       height: 1.05,
-                      color: kAtlasInk900,
+                      color: atlasInkPrimary(context),
                     ),
                   ).workaroundFreezeLinuxMint(),
                 ),
@@ -413,8 +412,14 @@ class _DesktopHomePageState extends State<DesktopHomePage>
             height: size,
             decoration: BoxDecoration(
               color: filled
-                  ? (hover.value ? const Color(0xFFD1D7CC) : kAtlasFill)
-                  : (hover.value ? kAtlasGreenPale : Colors.transparent),
+                  ? (hover.value
+                      ? (isLightTheme(context)
+                          ? const Color(0xFFD1D7CC)
+                          : const Color(0xFF3A3F46))
+                      : atlasFillColor(context))
+                  : (hover.value
+                      ? atlasGreenPale(context)
+                      : Colors.transparent),
               borderRadius: BorderRadius.circular(7),
             ),
             child: iconWidget ??
@@ -422,8 +427,10 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                   icon,
                   size: 15,
                   color: filled
-                      ? kAtlasInk600
-                      : (hover.value ? kAtlasInk900 : kAtlasInk500),
+                      ? atlasInkBody(context)
+                      : (hover.value
+                          ? atlasInkPrimary(context)
+                          : atlasInkMuted(context)),
                 ),
           ),
         ),
@@ -459,6 +466,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     final showOneTime = model.approveMode != 'click' &&
         model.verificationMethod != kUsePermanentPassword;
     return _buildCard(
+      context,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -468,15 +476,15 @@ class _DesktopHomePageState extends State<DesktopHomePage>
             children: [
               Text(
                 translate("Password").toUpperCase(),
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: kAtlasBodyFont,
                   fontSize: 10,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.8, // 0.08em at 10px
-                  color: kAtlasInk500,
+                  color: atlasInkMuted(context),
                 ),
               ),
-              if (!bind.isDisableSettings()) _buildPasswordModeToggle(model),
+              if (!bind.isDisableSettings()) _buildPasswordModeToggle(context, model),
             ],
           ),
           const SizedBox(height: 8),
@@ -501,12 +509,12 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                       border: InputBorder.none,
                       contentPadding: EdgeInsets.symmetric(vertical: 6),
                     ),
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontFamily: kAtlasMonoFont,
                       fontSize: 19,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 1.14, // 0.06em at 19px
-                      color: kAtlasInk900,
+                      color: atlasInkPrimary(context),
                     ),
                   ).workaroundFreezeLinuxMint(),
                 ),
@@ -537,8 +545,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                   onTap: () => bind.mainUpdateTemporaryPassword(),
                   iconWidget: AnimatedRotationWidget(
                     onPressed: () => bind.mainUpdateTemporaryPassword(),
-                    child: const Icon(Icons.refresh,
-                        size: 14, color: kAtlasInk600),
+                    child: Icon(Icons.refresh,
+                        size: 14, color: atlasInkBody(context)),
                   ),
                 )
               else if (!bind.isDisableSettings())
@@ -561,7 +569,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   // Segmented One-time / Permanent pill. Sage track; the active segment is a
   // white rounded chip with ink text, the inactive segment is ink-500.
   // Bound to the verification method (kUseTemporaryPassword / kUsePermanentPassword).
-  Widget _buildPasswordModeToggle(ServerModel model) {
+  Widget _buildPasswordModeToggle(BuildContext context, ServerModel model) {
     final isPermanent = model.verificationMethod == kUsePermanentPassword;
 
     Widget seg(String label, bool active, VoidCallback onTap) {
@@ -572,12 +580,13 @@ class _DesktopHomePageState extends State<DesktopHomePage>
           duration: const Duration(milliseconds: 120),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
-            color: active ? kAtlasCard : Colors.transparent,
+            color: active ? atlasCardColor(context) : Colors.transparent,
             borderRadius: BorderRadius.circular(6),
             boxShadow: active
                 ? [
                     BoxShadow(
-                      color: const Color(0xFF1C1917).withOpacity(0.06),
+                      color: Colors.black
+                          .withOpacity(isLightTheme(context) ? 0.06 : 0.25),
                       blurRadius: 3,
                       offset: const Offset(0, 1),
                     ),
@@ -590,7 +599,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
               fontFamily: kAtlasBodyFont,
               fontSize: 12.5,
               fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-              color: active ? kAtlasInk900 : kAtlasInk500,
+              color: active ? atlasInkPrimary(context) : atlasInkMuted(context),
             ),
           ),
         ),
@@ -600,8 +609,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     return Container(
       padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
-        color: kAtlasFill,
-        border: Border.all(color: kAtlasBorder, width: 1),
+        color: atlasFillColor(context),
+        border: Border.all(color: atlasBorderColor(context), width: 1),
         borderRadius: BorderRadius.circular(7),
       ),
       child: Row(
@@ -628,11 +637,11 @@ class _DesktopHomePageState extends State<DesktopHomePage>
       child: Text(
         translate(isOutgoingOnly ? "outgoing_only_desk_tip" : "desk_tip"),
         overflow: TextOverflow.clip,
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: kAtlasBodyFont,
           fontSize: 12,
           height: 1.6,
-          color: kAtlasInk500,
+          color: atlasInkMuted(context),
         ),
       ),
     );

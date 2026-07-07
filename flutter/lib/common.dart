@@ -682,6 +682,58 @@ extension ParseToString on ThemeMode {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Atlas Remote — theme-aware surface/ink tokens.
+//
+// The Atlas redesign (Home/Connection/Settings/Fleet) hardcoded the LIGHT
+// palette (white cards #FFFFFF, sage page #F7F9F6, dark ink text). In DARK
+// mode the app shell is dark but those surfaces rendered as white cards with
+// dark text — broken. These getters apply the Atlas light hex ONLY in light
+// mode and defer to the dark equivalents in dark mode, so the same widget tree
+// reads correctly in both. The green accent (#6EA924) is intentionally
+// constant across both modes.
+//
+// Dark values mirror the fork's darkTheme surfaces (card ~#23262B, page
+// ~#17181C, border ~#33373D; ink #E6E8E3 / #B7BCB2 / #8C9187).
+bool isLightTheme(BuildContext context) =>
+    Theme.of(context).brightness == Brightness.light;
+
+// Card / raised surface (light: #FFFFFF).
+Color atlasCardColor(BuildContext context) =>
+    isLightTheme(context) ? const Color(0xFFFFFFFF) : const Color(0xFF23262B);
+
+// Page / scaffold background (light: sage #F7F9F6).
+Color atlasPageColor(BuildContext context) =>
+    isLightTheme(context) ? const Color(0xFFF7F9F6) : const Color(0xFF17181C);
+
+// Subtle sage fill for inset controls / segmented tracks (light: #EAEEE7).
+Color atlasFillColor(BuildContext context) =>
+    isLightTheme(context) ? const Color(0xFFEAEEE7) : const Color(0xFF2A2E34);
+
+// Hairline border (light: sage #D1D6CD).
+Color atlasBorderColor(BuildContext context) =>
+    isLightTheme(context) ? const Color(0xFFD1D6CD) : const Color(0xFF33373D);
+
+// Ink — headings / primary text (light: ink-900 #1C1917).
+Color atlasInkPrimary(BuildContext context) =>
+    isLightTheme(context) ? const Color(0xFF1C1917) : const Color(0xFFE6E8E3);
+
+// Ink — body text (light: ink-700 #44403C).
+Color atlasInkBody(BuildContext context) =>
+    isLightTheme(context) ? const Color(0xFF44403C) : const Color(0xFFB7BCB2);
+
+// Ink — labels / muted / secondary (light: ink-500 #858585).
+Color atlasInkMuted(BuildContext context) =>
+    isLightTheme(context) ? const Color(0xFF858585) : const Color(0xFF8C9187);
+
+// Atlas brand green — the SAME in both modes.
+const Color kAtlasBrandGreen = Color(0xFF6EA924);
+// Pale-green hover / status wash (light only; a translucent green in dark so
+// it reads on the dark surface instead of a near-white block).
+Color atlasGreenPale(BuildContext context) => isLightTheme(context)
+    ? const Color(0xFFF4F8EC)
+    : kAtlasBrandGreen.withOpacity(0.16);
+
 final ButtonStyle flatButtonStyle = TextButton.styleFrom(
   minimumSize: Size(0, 36),
   padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 10.0),

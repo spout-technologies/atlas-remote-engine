@@ -143,10 +143,11 @@ class _PeerTabPageState extends State<PeerTabPage>
     // text-secondary (#444241) with no background fill (DS hover = colour shift
     // only). Desktop shows the text label (Recent / Favorites / …); mobile keeps
     // the compact icon so the narrow bar still fits.
-    const inkActive = Color(0xFF1C1917); // --text-heading (ink-900)
-    const inkMuted = Color(0xFF858585); // --text-muted (ink-400)
-    const inkHover = Color(0xFF444241); // --text-secondary (ink-600)
-    const cardWhite = Color(0xFFFFFFFF);
+    // Theme-aware: light hex in light mode, dark ink/surface in dark mode.
+    final inkActive = atlasInkPrimary(context); // --text-heading
+    final inkMuted = atlasInkMuted(context); // --text-muted
+    final inkHover = atlasInkBody(context); // --text-secondary
+    final cardWhite = atlasCardColor(context); // active chip surface
     final bool showLabels = isDesktop || isWebDesktop;
     return ReorderableListView(
         buildDefaultDragHandles: false,

@@ -503,6 +503,34 @@ class _PeerCardState extends State<_PeerCard>
   bool get wantKeepAlive => true;
 }
 
+/// Shows [card]'s standard peer context menu at [globalPosition] (a global
+/// screen point, e.g. a right-click location or a row's top-left). Reuses the
+/// same `mod_menu.showMenu` call the peer card uses for its own right-click,
+/// so every action (rename, connect, transfer, remove, …) behaves identically.
+/// Used by the Atlas device tables in `peers_view.dart` to restore the
+/// right-click / long-press menu their custom rows would otherwise lack.
+Future<void> showPeerContextMenu(
+  BuildContext context,
+  BasePeerCard card,
+  Offset globalPosition,
+) async {
+  final entries = await card.buildPeerMenuEntries(context);
+  if (entries.isEmpty) return;
+  if (!context.mounted) return;
+  final pos = RelativeRect.fromLTRB(
+    globalPosition.dx,
+    globalPosition.dy,
+    globalPosition.dx,
+    globalPosition.dy,
+  );
+  await mod_menu.showMenu(
+    context: context,
+    position: pos,
+    items: entries,
+    elevation: 8,
+  );
+}
+
 abstract class BasePeerCard extends StatelessWidget {
   final Peer peer;
   final PeerTabIndex tab;
@@ -534,6 +562,14 @@ abstract class BasePeerCard extends StatelessWidget {
                   dividerHeight: CustomPopupMenuTheme.dividerHeight)))
           .expand((i) => i)
           .toList();
+
+  /// Public entry point so bespoke Atlas table rows (which render their own
+  /// widget instead of a `_PeerCard`) can reuse this card's exact context menu
+  /// — rename/alias, connect variants, transfer file, remove, etc. — without
+  /// duplicating any action. Delegates to the same builder the peer card uses.
+  Future<List<mod_menu.PopupMenuEntry<String>>> buildPeerMenuEntries(
+          BuildContext context) =>
+      _buildPopupMenuEntry(context);
 
   @protected
   Future<List<MenuEntryBase<String>>> _buildMenuItems(BuildContext context);

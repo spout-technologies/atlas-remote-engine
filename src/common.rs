@@ -1081,13 +1081,24 @@ fn get_api_server_(api: String, custom: String) -> String {
             return format!("http://{}", s);
         }
     }
-    "https://admin.rustdesk.com".to_owned()
+    // Atlas Remote fork: the account/API backend defaults to Atlas' own host,
+    // not upstream RustDesk's public cloud. This is the URL the login/account
+    // flow (user_model.dart login / currentUser / logout / OIDC options) hits
+    // when no custom api-server is configured. Rebranded to match the fork's
+    // baked relay + atlasos.work surfaces.
+    "https://admin.atlasos.work".to_owned()
 }
 
 #[inline]
 pub fn is_public(url: &str) -> bool {
     let url = url.to_ascii_lowercase();
-    url.contains("rustdesk.com/") || url.ends_with("rustdesk.com")
+    // Treat both the upstream RustDesk public cloud and the Atlas public
+    // account host as "public" (disables audit server + flips punch defaults,
+    // same as upstream did for rustdesk.com).
+    url.contains("rustdesk.com/")
+        || url.ends_with("rustdesk.com")
+        || url.contains("atlasos.work/")
+        || url.ends_with("atlasos.work")
 }
 
 pub fn get_udp_punch_enabled() -> bool {

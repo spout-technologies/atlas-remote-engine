@@ -25,12 +25,9 @@ import 'login.dart';
 final hideAbTagsPanel = false.obs;
 
 // Atlas Remote — fleet toolbar design tokens (DS .ds-field / .ds-input--sm /
-// .ds-select). Card fill #fff, border --surface-300, ink-500 (#858585) for
-// placeholder/icon/count, body ink (#44403C, --text-body) for field text.
-const Color _kAbCard = Color(0xFFFFFFFF);
-const Color _kAbBorder = Color(0xFFD1D6CD);
-const Color _kAbInk500 = Color(0xFF858585);
-const Color _kAbInkBody = Color(0xFF44403C);
+// .ds-select). Card fill, border, ink-500 (placeholder/icon/count) and body
+// ink (field text) are now theme-aware via the atlas*Color(context) getters in
+// common.dart — light hex in light mode, dark surfaces/ink in dark mode.
 const String _kAllClients = '__atlas_all_clients__';
 
 class AddressBook extends StatefulWidget {
@@ -163,10 +160,10 @@ class _AddressBookState extends State<AddressBook> {
           const SizedBox(width: 12),
           Text(
             '$shown ${translate('of')} $total ${translate('devices')}',
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: kAtlasBodyFont,
               fontSize: 12,
-              color: _kAbInk500,
+              color: atlasInkMuted(context),
             ),
           ),
         ],
@@ -180,10 +177,10 @@ class _AddressBookState extends State<AddressBook> {
         value: _kAllClients,
         child: Text(
           '${translate('All')} ${translate('clients')}',
-          style: const TextStyle(
+          style: TextStyle(
               fontSize: 12.5,
               fontFamily: kAtlasBodyFont,
-              color: _kAbInkBody),
+              color: atlasInkBody(context)),
           overflow: TextOverflow.ellipsis,
         ),
       ),
@@ -204,10 +201,10 @@ class _AddressBookState extends State<AddressBook> {
                 Flexible(
                   child: Text(
                     e.toString(),
-                    style: const TextStyle(
+                    style: TextStyle(
                         fontSize: 12.5,
                         fontFamily: kAtlasBodyFont,
-                        color: _kAbInkBody),
+                        color: atlasInkBody(context)),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -221,9 +218,9 @@ class _AddressBookState extends State<AddressBook> {
       // DS .ds-select insets: text left 12, chevron right 10.
       padding: const EdgeInsets.only(left: 12, right: 10),
       decoration: BoxDecoration(
-        color: _kAbCard,
+        color: atlasCardColor(context),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _kAbBorder, width: 1),
+        border: Border.all(color: atlasBorderColor(context), width: 1),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton2<String>(
@@ -237,9 +234,9 @@ class _AddressBookState extends State<AddressBook> {
               gFFI.abModel.selectedTags.add(value);
             }
           },
-          iconStyleData: const IconStyleData(
-            icon: Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-            iconEnabledColor: _kAbInk500,
+          iconStyleData: IconStyleData(
+            icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+            iconEnabledColor: atlasInkMuted(context),
           ),
           buttonStyleData: const ButtonStyleData(
             padding: EdgeInsets.zero,
@@ -248,9 +245,9 @@ class _AddressBookState extends State<AddressBook> {
           dropdownStyleData: DropdownStyleData(
             maxHeight: 320,
             decoration: BoxDecoration(
-              color: _kAbCard,
+              color: atlasCardColor(context),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: _kAbBorder, width: 1),
+              border: Border.all(color: atlasBorderColor(context), width: 1),
             ),
           ),
         ),
@@ -262,29 +259,32 @@ class _AddressBookState extends State<AddressBook> {
     return Container(
       height: 32,
       decoration: BoxDecoration(
-        color: _kAbCard,
+        color: atlasCardColor(context),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _kAbBorder, width: 1),
+        border: Border.all(color: atlasBorderColor(context), width: 1),
       ),
       child: Center(
         child: TextField(
           controller: peerSearchTextController,
           onChanged: (value) => peerSearchText.value = value,
-          // DS .ds-input--sm: 13px; field text = --text-body (#44403C).
-          style: const TextStyle(
-              fontSize: 13, fontFamily: kAtlasBodyFont, color: _kAbInkBody),
+          // DS .ds-input--sm: 13px; field text = --text-body.
+          style: TextStyle(
+              fontSize: 13,
+              fontFamily: kAtlasBodyFont,
+              color: atlasInkBody(context)),
           decoration: InputDecoration(
             isDense: true,
             border: InputBorder.none,
             contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-            prefixIcon: const Icon(Icons.search, size: 16, color: _kAbInk500),
+            prefixIcon:
+                Icon(Icons.search, size: 16, color: atlasInkMuted(context)),
             prefixIconConstraints:
                 const BoxConstraints(minWidth: 32, minHeight: 32),
             hintText: translate('Search devices'),
-            hintStyle: const TextStyle(
+            hintStyle: TextStyle(
               fontSize: 13,
               fontFamily: kAtlasBodyFont,
-              color: _kAbInk500,
+              color: atlasInkMuted(context),
             ),
           ),
         ).workaroundFreezeLinuxMint(),

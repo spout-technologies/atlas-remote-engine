@@ -134,9 +134,7 @@ class _DesktopTabPageState extends State<DesktopTabPage> {
 class _AtlasStatusPill extends StatelessWidget {
   const _AtlasStatusPill();
 
-  static const Color _green = Color(0xFF6EA924);
-  static const Color _greenPale = Color(0xFFF4F8EC);
-  static const Color _ink = Color(0xFF292524);
+  static const Color _green = kAtlasBrandGreen;
   static const Color _warn = Color(0xFFE0A312);
   static const String _relayLabel = 'Atlas Relay (EU)';
 
@@ -154,11 +152,20 @@ class _AtlasStatusPill extends StatelessWidget {
           : (connecting
               ? translate('connecting_status')
               : translate('not_ready_status'));
+      // Theme-aware pill: pale-green wash + ink text in light mode; a
+      // translucent-green wash + light ink in dark mode so it reads on the
+      // dark titlebar instead of a white block.
+      final Color pillBg = atlasGreenPale(context);
+      final Color pillInk = atlasInkBody(context);
+      // Constrain the label so it can NEVER overflow the titlebar / overlap the
+      // window controls: it sizes to content but ellipsises past a sane cap,
+      // and the pill keeps a right margin so there is a clear gap before the
+      // min/max/close buttons that follow it in the tail Row.
       return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        margin: const EdgeInsets.only(left: 8, right: 10, top: 6, bottom: 6),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: _greenPale,
+          color: pillBg,
           borderRadius: BorderRadius.circular(999),
         ),
         child: Row(
@@ -170,13 +177,19 @@ class _AtlasStatusPill extends StatelessWidget {
               margin: const EdgeInsets.only(right: 7),
               decoration: BoxDecoration(shape: BoxShape.circle, color: dot),
             ),
-            Text(
-              '$statusWord · $_relayLabel',
-              style: const TextStyle(
-                fontFamily: kAtlasBodyFont,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                color: _ink,
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 200),
+              child: Text(
+                '$statusWord · $_relayLabel',
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: kAtlasBodyFont,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: pillInk,
+                ),
               ),
             ),
           ],

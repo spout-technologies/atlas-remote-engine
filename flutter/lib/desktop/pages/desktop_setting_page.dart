@@ -2605,7 +2605,13 @@ class _AboutState extends State<_About> {
         ],
       );
 
-      // AGPL attribution — kept verbatim, restyled to the Atlas sage card.
+      // Attribution card. Atlas Remote is a Spout product built on the
+      // open-source RustDesk project; this states that plainly AND preserves
+      // the legally-required AGPL-3.0 attribution to Purslane Ltd (the upstream
+      // copyright holder) plus a View Source link (AGPL source-availability).
+      // The old RustDesk "Slogan_tip" ("Made with heart in this chaotic
+      // world!") is intentionally removed — it was upstream marketing, not
+      // attribution, and reads as dishonest on a rebranded fork.
       final agplCard = Container(
         width: double.infinity,
         margin: const EdgeInsets.only(top: 20),
@@ -2620,20 +2626,24 @@ class _AboutState extends State<_About> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
+                'Atlas Remote is a product of Spout Technologies (Pty) Ltd, '
+                'built on the open-source RustDesk remote-desktop project '
+                '(© Purslane Ltd, AGPL-3.0).',
+                style: const TextStyle(
+                  fontFamily: kAtlasBodyFont,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: _kAtlasInkHeading,
+                  height: 1.6,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
                 'Copyright © ${DateTime.now().toString().substring(0, 4)} Purslane Ltd.\n$license',
                 style: const TextStyle(
                   fontFamily: kAtlasBodyFont,
                   fontSize: 12,
                   color: _kAtlasInkSecondary,
-                  height: 1.6,
-                ),
-              ),
-              Text(
-                translate('Slogan_tip'),
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: _kAtlasInkHeading,
                   height: 1.6,
                 ),
               ),

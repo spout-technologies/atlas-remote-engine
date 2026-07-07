@@ -18,12 +18,10 @@ import '../../common/widgets/autocomplete.dart';
 import '../../models/platform_model.dart';
 
 // Atlas Remote design tokens (Claude Design spec) for the RIGHT pane.
-const Color _kInk900 = Color(0xFF1C1917);
-const Color _kInk500 = Color(0xFF858585);
-const Color _kFill = Color(0xFFEAEEE7); // subtle sage fill
-const Color _kBorder = Color(0xFFD1D6CD);
-const Color _kGreen = Color(0xFF6EA924);
-const Color _kCard = Color(0xFFFFFFFF);
+// Surface/ink tokens are theme-aware via the atlas*Color(context) getters in
+// common.dart (light hex in light mode, dark surfaces/ink in dark mode). Only
+// the brand green is a constant — it is identical in both modes.
+const Color _kGreen = kAtlasBrandGreen;
 
 class OnlineStatusWidget extends StatefulWidget {
   const OnlineStatusWidget({Key? key, this.onSvcStatusChanged})
@@ -322,12 +320,12 @@ class _ConnectionPageState extends State<ConnectionPage>
               padding: const EdgeInsets.only(bottom: 10),
               child: Text(
                 translate("Connect to a Device").toUpperCase(),
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: kAtlasBodyFont,
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 1.0, // 0.1em at 10px
-                  color: _kInk500,
+                  color: atlasInkMuted(context),
                 ),
               ),
             ),
@@ -336,7 +334,8 @@ class _ConnectionPageState extends State<ConnectionPage>
             Expanded(child: PeerTabPage()),
           ],
         ).paddingOnly(left: 24.0, top: 24.0, right: 12.0)),
-        if (!isOutgoingOnly) const Divider(height: 1, color: _kBorder),
+        if (!isOutgoingOnly)
+          Divider(height: 1, color: atlasBorderColor(context)),
         if (!isOutgoingOnly) OnlineStatusWidget()
       ],
     );
@@ -364,9 +363,9 @@ class _ConnectionPageState extends State<ConnectionPage>
     final idField = Container(
       height: 44,
       decoration: BoxDecoration(
-        color: _kCard,
+        color: atlasCardColor(context),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _kBorder, width: 1),
+        border: Border.all(color: atlasBorderColor(context), width: 1),
       ),
       alignment: Alignment.center,
       child: Row(
@@ -435,12 +434,12 @@ class _ConnectionPageState extends State<ConnectionPage>
                           enableSuggestions: false,
                           keyboardType: TextInputType.visiblePassword,
                           focusNode: fieldFocusNode,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontFamily: kAtlasMonoFont,
                             fontSize: 15,
                             letterSpacing: 0.6, // 0.04em at 15px
                             height: 1.2,
-                            color: _kInk900,
+                            color: atlasInkPrimary(context),
                           ),
                           maxLines: 1,
                           cursorColor: _kGreen,
@@ -452,11 +451,11 @@ class _ConnectionPageState extends State<ConnectionPage>
                               hintText: _idInputFocused.value
                                   ? null
                                   : translate('Enter Remote ID'),
-                              hintStyle: const TextStyle(
+                              hintStyle: TextStyle(
                                 fontFamily: kAtlasMonoFont,
                                 fontSize: 15,
                                 letterSpacing: 0.6,
-                                color: _kInk500,
+                                color: atlasInkMuted(context),
                               ),
                               contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 14, vertical: 12)),
@@ -580,7 +579,7 @@ class _ConnectionPageState extends State<ConnectionPage>
               child: Icon(
                 icon,
                 size: 16,
-                color: active ? Colors.white : _kInk500,
+                color: active ? Colors.white : atlasInkMuted(context),
               ),
             ),
           ),
@@ -592,9 +591,9 @@ class _ConnectionPageState extends State<ConnectionPage>
       height: 44,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: _kFill,
+        color: atlasFillColor(context),
         borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: _kBorder, width: 1),
+        border: Border.all(color: atlasBorderColor(context), width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

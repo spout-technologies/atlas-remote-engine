@@ -613,6 +613,22 @@ class _AtlasRecentDeviceRowState extends State<_AtlasRecentDeviceRow> {
 
   void _connect() => connect(context, widget.peer.id);
 
+  // Restore RustDesk's per-peer right-click menu (rename/alias, connect
+  // variants, transfer file, remove, …) on the Atlas Recent table row by
+  // reusing the existing RecentPeerCard menu builder. `at` is the global
+  // screen point to anchor the menu (right-click location, or the row origin
+  // for the long-press fallback).
+  Future<void> _showContextMenu(Offset at) => showPeerContextMenu(
+        context,
+        RecentPeerCard(peer: widget.peer),
+        at,
+      );
+
+  Offset _rowTopLeft() {
+    final box = context.findRenderObject() as RenderBox?;
+    return box?.localToGlobal(Offset.zero) ?? Offset.zero;
+  }
+
   @override
   Widget build(BuildContext context) {
     final peer = widget.peer;
@@ -629,6 +645,8 @@ class _AtlasRecentDeviceRowState extends State<_AtlasRecentDeviceRow> {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onDoubleTap: _connect,
+        onSecondaryTapDown: (d) => _showContextMenu(d.globalPosition),
+        onLongPress: () => _showContextMenu(_rowTopLeft()),
         child: Container(
           color: _hover ? _kAtlasHeadFill : Colors.transparent,
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -757,6 +775,22 @@ class _AtlasAbDeviceRowState extends State<_AtlasAbDeviceRow> {
   void _connect() =>
       connectInPeerTab(context, widget.peer, PeerTabIndex.ab);
 
+  // Restore RustDesk's per-peer right-click menu (rename/alias, connect
+  // variants, transfer file, remove, tag edits, …) on the Atlas fleet table
+  // row by reusing the existing AddressBookPeerCard menu builder. `at` is the
+  // global screen point to anchor the menu (right-click location, or the row
+  // origin for the long-press fallback).
+  Future<void> _showContextMenu(Offset at) => showPeerContextMenu(
+        context,
+        AddressBookPeerCard(peer: widget.peer),
+        at,
+      );
+
+  Offset _rowTopLeft() {
+    final box = context.findRenderObject() as RenderBox?;
+    return box?.localToGlobal(Offset.zero) ?? Offset.zero;
+  }
+
   @override
   Widget build(BuildContext context) {
     final peer = widget.peer;
@@ -772,6 +806,8 @@ class _AtlasAbDeviceRowState extends State<_AtlasAbDeviceRow> {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onDoubleTap: _connect,
+        onSecondaryTapDown: (d) => _showContextMenu(d.globalPosition),
+        onLongPress: () => _showContextMenu(_rowTopLeft()),
         child: Container(
           color: _hover ? _kAtlasHeadFill : Colors.transparent,
           padding: const EdgeInsets.symmetric(horizontal: 16),
