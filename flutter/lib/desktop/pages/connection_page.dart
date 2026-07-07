@@ -23,7 +23,6 @@ const Color _kInk500 = Color(0xFF858585);
 const Color _kFill = Color(0xFFEAEEE7); // subtle sage fill
 const Color _kBorder = Color(0xFFD1D6CD);
 const Color _kGreen = Color(0xFF6EA924);
-const Color _kGreenPale = Color(0xFFF4F8EC);
 const Color _kCard = Color(0xFFFFFFFF);
 
 class OnlineStatusWidget extends StatefulWidget {
@@ -320,20 +319,20 @@ class _ConnectionPageState extends State<ConnectionPage>
           children: [
             // Eyebrow: "CONNECT TO A DEVICE"
             Padding(
-              padding: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.only(bottom: 10),
               child: Text(
                 translate("Connect to a Device").toUpperCase(),
                 style: const TextStyle(
                   fontFamily: kAtlasBodyFont,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.88,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.0, // 0.1em at 10px
                   color: _kInk500,
                 ),
               ),
             ),
             _buildRemoteIDTextField(context),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
             Expanded(child: PeerTabPage()),
           ],
         ).paddingOnly(left: 24.0, top: 24.0, right: 12.0)),
@@ -365,8 +364,9 @@ class _ConnectionPageState extends State<ConnectionPage>
     final idField = Container(
       height: 44,
       decoration: BoxDecoration(
-        color: _kFill,
+        color: _kCard,
         borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _kBorder, width: 1),
       ),
       alignment: Alignment.center,
       child: Row(
@@ -437,7 +437,8 @@ class _ConnectionPageState extends State<ConnectionPage>
                           focusNode: fieldFocusNode,
                           style: const TextStyle(
                             fontFamily: kAtlasMonoFont,
-                            fontSize: 16,
+                            fontSize: 15,
+                            letterSpacing: 0.6, // 0.04em at 15px
                             height: 1.2,
                             color: _kInk900,
                           ),
@@ -452,8 +453,9 @@ class _ConnectionPageState extends State<ConnectionPage>
                                   ? null
                                   : translate('Enter Remote ID'),
                               hintStyle: const TextStyle(
-                                fontFamily: kAtlasBodyFont,
+                                fontFamily: kAtlasMonoFont,
                                 fontSize: 15,
+                                letterSpacing: 0.6,
                                 color: _kInk500,
                               ),
                               contentPadding: const EdgeInsets.symmetric(
@@ -565,22 +567,20 @@ class _ConnectionPageState extends State<ConnectionPage>
         return Tooltip(
           message: tip,
           child: InkWell(
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(7),
             onTap: () => _connectKind.value = kind,
             child: Container(
               width: 34,
               height: 34,
+              margin: const EdgeInsets.symmetric(horizontal: 1.5),
               decoration: BoxDecoration(
-                color: active ? _kGreenPale : Colors.transparent,
-                borderRadius: BorderRadius.circular(6),
-                border: active
-                    ? Border.all(color: _kGreen.withOpacity(0.35), width: 1)
-                    : null,
+                color: active ? _kGreen : Colors.transparent,
+                borderRadius: BorderRadius.circular(7),
               ),
               child: Icon(
                 icon,
-                size: 18,
-                color: active ? _kGreen : _kInk500,
+                size: 16,
+                color: active ? Colors.white : _kInk500,
               ),
             ),
           ),
@@ -590,10 +590,10 @@ class _ConnectionPageState extends State<ConnectionPage>
 
     return Container(
       height: 44,
-      padding: const EdgeInsets.symmetric(horizontal: 3),
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
-        color: _kCard,
-        borderRadius: BorderRadius.circular(8),
+        color: _kFill,
+        borderRadius: BorderRadius.circular(9),
         border: Border.all(color: _kBorder, width: 1),
       ),
       child: Row(
@@ -621,7 +621,7 @@ class _ConnectionPageState extends State<ConnectionPage>
             backgroundColor: _kGreen,
             foregroundColor: Colors.white,
             elevation: 0,
-            padding: const EdgeInsets.symmetric(horizontal: 18),
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
             ),
@@ -639,13 +639,13 @@ class _ConnectionPageState extends State<ConnectionPage>
                 translate("Connect"),
                 style: const TextStyle(
                   fontFamily: kAtlasBodyFont,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
                   color: Colors.white,
                 ),
               ),
               const SizedBox(width: 6),
-              const Icon(Icons.arrow_forward, size: 16, color: Colors.white),
+              const Icon(Icons.arrow_forward, size: 15, color: Colors.white),
             ],
           ),
         ),

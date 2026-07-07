@@ -427,6 +427,31 @@ class _AtlasLoginField extends StatefulWidget {
 
 class _AtlasLoginFieldState extends State<_AtlasLoginField> {
   bool _visible = false;
+  bool _focused = false;
+  // Composes with any caller-supplied focusNode so the design's focus glow can
+  // be driven without disturbing the auth flow's focus contract.
+  FocusNode? _ownFocusNode;
+
+  FocusNode get _effectiveFocusNode =>
+      widget.focusNode ?? (_ownFocusNode ??= FocusNode());
+
+  @override
+  void initState() {
+    super.initState();
+    _effectiveFocusNode.addListener(_onFocusChange);
+  }
+
+  void _onFocusChange() {
+    final f = _effectiveFocusNode.hasFocus;
+    if (f != _focused) setState(() => _focused = f);
+  }
+
+  @override
+  void dispose() {
+    _effectiveFocusNode.removeListener(_onFocusChange);
+    _ownFocusNode?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -446,10 +471,25 @@ class _AtlasLoginFieldState extends State<_AtlasLoginField> {
           ),
         ),
         const SizedBox(height: 6),
-        TextField(
-          controller: widget.controller,
-          focusNode: widget.focusNode,
-          obscureText: obscure,
+        // Focus glow — design .ds-field:focus box-shadow:0 0 0 3px
+        // rgb(110 169 36 / 0.18) (0 blur, 3px spread, no offset).
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(_kAtlasFieldRadius),
+            boxShadow: _focused && !hasError
+                ? const [
+                    BoxShadow(
+                      color: Color(0x2E6EA924), // 0.18 alpha
+                      blurRadius: 0,
+                      spreadRadius: 3,
+                    ),
+                  ]
+                : null,
+          ),
+          child: TextField(
+            controller: widget.controller,
+            focusNode: _effectiveFocusNode,
+            obscureText: obscure,
           keyboardType: widget.keyboardType,
           autofocus: false,
           autofillHints:
@@ -493,17 +533,21 @@ class _AtlasLoginFieldState extends State<_AtlasLoginField> {
                 width: 1,
               ),
             ),
+            // Design .ds-field:focus keeps the 1px border, recolours it to
+            // brand-500, and adds an external 3px soft-green glow (rendered by
+            // the wrapping Container's BoxShadow below).
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(_kAtlasFieldRadius),
               borderSide: const BorderSide(
                 color: MyTheme.accent, // brand-500 #6EA924
-                width: 1.5,
+                width: 1,
               ),
             ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(_kAtlasFieldRadius),
               borderSide: const BorderSide(color: _kAtlasFieldBorder, width: 1),
             ),
+          ),
           ),
         ),
         if (hasError)
@@ -558,19 +602,22 @@ class LoginWidgetUserPass extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           // ── Brand + heading (centred) ──
+          // Design: <img> height:24px; margin:0 auto 18px.
           SizedBox(
-            height: 34,
+            height: 24,
             child: Center(child: loadLogo()),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 18),
           Text(
             translate('Sign in to Atlas'),
             textAlign: TextAlign.center,
+            // Design: font-family:var(--font-display); font-size:20px;
+            // font-weight:700; color:var(--text-heading) #1C1917. The heading
+            // is a plain <div> (not an h-tag) so it inherits NO letter-spacing.
             style: const TextStyle(
               fontFamily: kAtlasDisplayFont,
               fontSize: 20,
               fontWeight: FontWeight.w700,
-              letterSpacing: -0.3,
               color: _kAtlasInkHeading,
             ),
           ),
@@ -603,7 +650,7 @@ class LoginWidgetUserPass extends StatelessWidget {
           // ── Password ──
           _AtlasLoginField(
             label: 'Password',
-            hintText: 'Enter your password',
+            hintText: '••••••••', // design placeholder (8 bullets)
             controller: pass,
             errorText: passMsg,
             obscure: true,
@@ -616,7 +663,7 @@ class LoginWidgetUserPass extends StatelessWidget {
               padding: EdgeInsets.only(top: 12),
               child: LinearProgressIndicator(),
             ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 10), // design: primary button div margin-top:10px
 
           // ── Primary "Sign in with Atlas" (green, full-width, 44px) ──
           SizedBox(
@@ -640,11 +687,13 @@ class LoginWidgetUserPass extends StatelessWidget {
                   child: Text(
                     // Label-only relabel; the OIDC/account flow underneath
                     // is unchanged (Atlas SSO wiring is a separate track).
+                    // Design .ds-btn base = font-weight:500; .ds-btn--size-lg
+                    // = font-size:16px (default variant adds no weight override).
                     translate('Sign in with Atlas'),
                     style: const TextStyle(
                       fontFamily: kAtlasBodyFont,
                       fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
                 )),
@@ -834,16 +883,17 @@ Future<bool?> loginDialog() async {
           child: InkWell(
             child: Icon(
               Icons.close,
-              size: 20,
+              size: 15, // design close svg 15×15
               // No need to handle the branch of null.
               // Because we can ensure the color is not null when debug.
+              // Design close colour = var(--text-label) = ink-500 #858585.
               color: isCloseHovered ? Colors.white : _kAtlasInkMuted,
             ),
             onTap: onDialogCancel,
             hoverColor: Colors.red,
-            borderRadius: BorderRadius.circular(7),
+            borderRadius: BorderRadius.circular(7), // design border-radius:7px
           ),
-        ).marginOnly(top: 12, right: 12),
+        ).marginOnly(top: 14, right: 14), // design top:14px right:14px
       ],
     );
     final titlePadding = EdgeInsets.zero;
@@ -851,7 +901,8 @@ Future<bool?> loginDialog() async {
     return CustomAlertDialog(
       title: title,
       titlePadding: titlePadding,
-      contentBoxConstraints: BoxConstraints(minWidth: 340, maxWidth: 340),
+      // Design card width:400px, padding:32px → inner content width 336px.
+      contentBoxConstraints: BoxConstraints(minWidth: 336, maxWidth: 336),
       content: LayoutBuilder(builder: (context, constraints) {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,

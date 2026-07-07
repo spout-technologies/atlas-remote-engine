@@ -27,7 +27,7 @@ import 'package:url_launcher/url_launcher_string.dart';
 import '../../common/widgets/dialog.dart';
 import '../../common/widgets/login.dart';
 
-const double _kTabWidth = 200;
+const double _kTabWidth = 186;
 const double _kTabHeight = 42;
 const double _kCardFixedWidth = 540;
 const double _kCardLeftMargin = 15;
@@ -50,15 +50,17 @@ const Color _kAtlasPage = Color(0xFFF7F9F6); // surface-50 (page)
 const Color _kAtlasCard = Color(0xFFFFFFFF); // card
 const Color _kAtlasBorder = Color(0xFFD1D6CD); // surface-300 (border)
 const Color _kAtlasInkHeading = Color(0xFF1C1917); // ink-900
-const Color _kAtlasInkBody = Color(0xFF44403C); // ink-700
+const Color _kAtlasInkBody = Color(0xFF44403C); // ink-700 (--text-body)
+const Color _kAtlasInkSecondary =
+    Color(0xFF444241); // ink-600 (--text-secondary / rail idle label)
 const Color _kAtlasInkLabel = Color(0xFF858585); // ink-500
+const Color _kAtlasIconIdle = Color(0xFFA8A8A2); // settings rail idle icon
 const Color _kAtlasAccentPale = Color(0xFFF4F8EC); // brand-50 (active pill)
 const Color _kAtlasAccentDark = Color(0xFF426516); // brand-700 (active text)
 const Color _kAtlasInfoBg = Color(0xFFEFF6FF); // info-50
 const Color _kAtlasInfoBorder = Color(0xFFBFDBFE); // info-200
 const Color _kAtlasInfoInk = Color(0xFF1D4ED8); // info-700
-const double _kAtlasCardRadius = 12.0;
-const double _kAtlasCtrlRadius = 8.0;
+const double _kAtlasCtrlRadius = 8.0; // radius-md: cards, inputs, tabs, panels
 
 class _TabInfo {
   late final SettingsTabKey key;
@@ -384,7 +386,7 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
       return Container(
         width: _kTabWidth,
         height: _kTabHeight,
-        margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+        margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 1),
         decoration: BoxDecoration(
           color: selected ? _kAtlasAccentPale : Colors.transparent,
           borderRadius: BorderRadius.circular(_kAtlasCtrlRadius),
@@ -406,15 +408,16 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
             child: Row(children: [
               Icon(
                 selected ? tab.selected : tab.unselected,
-                color: selected ? _accentColor : _kAtlasInkLabel,
-                size: 18,
+                color: selected ? _accentColor : _kAtlasIconIdle,
+                size: 15,
               ).marginOnly(left: 12, right: 10),
               Text(
                 translate(tab.label),
                 style: TextStyle(
-                    color: selected ? _kAtlasAccentDark : _kAtlasInkBody,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                    fontSize: 13.5),
+                    fontFamily: kAtlasBodyFont,
+                    color: selected ? _kAtlasAccentDark : _kAtlasInkSecondary,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    fontSize: 13),
               ),
             ]),
           ),
@@ -1665,7 +1668,7 @@ class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
             width: _kCardFixedWidth,
             child: Container(
               margin: const EdgeInsets.only(left: _kCardLeftMargin, top: 15),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 color: _kAtlasInfoBg,
                 border: Border.all(color: _kAtlasInfoBorder, width: 1),
@@ -1675,16 +1678,17 @@ class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Icon(Icons.info_outline,
-                          size: 16, color: _kAtlasInfoInk)
-                      .marginOnly(top: 1, right: 10),
+                          size: 15, color: _kAtlasInfoInk)
+                      .marginOnly(top: 1, right: 8),
                   Expanded(
                     child: Text(
                       translate(
                           'Managed by Atlas — network settings are centrally configured for your organisation. Contact your administrator to change them.'),
                       style: const TextStyle(
+                        fontFamily: kAtlasBodyFont,
                         fontSize: 12.5,
                         color: _kAtlasInfoInk,
-                        height: 1.45,
+                        height: 1.5,
                       ),
                     ),
                   ),
@@ -2513,7 +2517,7 @@ class _AboutState extends State<_About> {
       // links row, then the AGPL attribution card. The copyright + licence
       // text is upstream AGPL attribution and is kept verbatim — the fork is
       // public AGPL and must link its source.
-      Widget aboutLink(String label, String url) {
+      Widget aboutLink(String label, String url, {double fontSize = 13}) {
         return InkWell(
           borderRadius: BorderRadius.circular(6),
           onTap: () => launchUrlString(url),
@@ -2521,8 +2525,9 @@ class _AboutState extends State<_About> {
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
             child: Text(
               '${translate(label)} ↗',
-              style: const TextStyle(
-                fontSize: 12.5,
+              style: TextStyle(
+                fontFamily: kAtlasBodyFont,
+                fontSize: fontSize,
                 fontWeight: FontWeight.w500,
                 color: _accentColor,
               ),
@@ -2553,7 +2558,7 @@ class _AboutState extends State<_About> {
                 'Atlas Remote',
                 style: const TextStyle(
                   fontFamily: kAtlasDisplayFont,
-                  fontSize: 20,
+                  fontSize: 19,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -0.3,
                   color: _kAtlasInkHeading,
@@ -2561,7 +2566,7 @@ class _AboutState extends State<_About> {
               ),
             ],
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           SelectionArea(
             child: Text(
               '${translate('Version')} $version · $buildDate',
@@ -2585,12 +2590,12 @@ class _AboutState extends State<_About> {
                 ),
               ).marginOnly(top: 4),
             ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 22),
           const Divider(height: 1, color: _kAtlasBorder),
-          const SizedBox(height: 16),
+          const SizedBox(height: 22),
           Wrap(
             alignment: WrapAlignment.center,
-            spacing: 6,
+            spacing: 18,
             children: [
               aboutLink('Privacy Statement', 'https://atlasos.work/privacy'),
               aboutLink('Terms of Service', 'https://atlasos.work/terms'),
@@ -2617,8 +2622,9 @@ class _AboutState extends State<_About> {
               Text(
                 'Copyright © ${DateTime.now().toString().substring(0, 4)} Purslane Ltd.\n$license',
                 style: const TextStyle(
+                  fontFamily: kAtlasBodyFont,
                   fontSize: 12,
-                  color: _kAtlasInkBody,
+                  color: _kAtlasInkSecondary,
                   height: 1.6,
                 ),
               ),
@@ -2634,7 +2640,8 @@ class _AboutState extends State<_About> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: aboutLink('View Source',
-                        'https://github.com/spout-technologies/atlas-remote-engine')
+                        'https://github.com/spout-technologies/atlas-remote-engine',
+                        fontSize: 12)
                     .marginOnly(top: 6, left: -6),
               ),
             ],
@@ -2653,7 +2660,10 @@ class _AboutState extends State<_About> {
               Text(
                 '© ${DateTime.now().toString().substring(0, 4)} Spout Technologies (Pty) Ltd. All rights reserved.',
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 11, color: _kAtlasInkLabel),
+                style: const TextStyle(
+                    fontFamily: kAtlasBodyFont,
+                    fontSize: 11,
+                    color: _kAtlasInkLabel),
               ).marginOnly(top: 16),
             ],
           ).marginOnly(left: _kContentHMargin)
@@ -2685,7 +2695,7 @@ Widget _Card(
             color: _kAtlasCard,
             elevation: 0,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(_kAtlasCardRadius),
+              borderRadius: BorderRadius.circular(_kAtlasCtrlRadius),
               side: const BorderSide(color: _kAtlasBorder, width: 1),
             ),
             child: Column(
@@ -2713,9 +2723,10 @@ Widget _Card(
                       Text(
                         translate(subtitle),
                         style: const TextStyle(
+                          fontFamily: kAtlasBodyFont,
                           fontSize: 12.5,
                           color: _kAtlasInkLabel,
-                          height: 1.35,
+                          height: 1.5,
                         ),
                       ).marginOnly(top: 3),
                   ],

@@ -93,7 +93,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
       Align(
         alignment: Alignment.centerLeft,
         child: loadLogo(),
-      ).marginOnly(left: kAtlasPanePad, top: 22, bottom: 18),
+      ).marginOnly(left: kAtlasPanePad, top: 20, bottom: 20),
       if (!isOutgoingOnly) _buildEyebrow(context, translate("Your Desktop")),
       if (!isOutgoingOnly) buildIDBoard(context),
       if (!isOutgoingOnly) buildPasswordBoard(context),
@@ -195,11 +195,14 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   // Atlas design tokens (mirrors MyTheme + the Claude Design spec). Kept local
   // to the Home screen so the card layout reads self-documenting.
   static const double kAtlasPanePad = 20.0;
-  static const Color kAtlasInk900 = Color(0xFF1C1917); // headings
+  static const Color kAtlasInk900 = Color(0xFF1C1917); // headings / text-heading
+  static const Color kAtlasInk700 = Color(0xFF44403C); // text-body
+  static const Color kAtlasInk600 = Color(0xFF444241); // text-secondary
   static const Color kAtlasInk500 = Color(0xFF858585); // labels / muted
   static const Color kAtlasCard = Color(0xFFFFFFFF);
-  static const Color kAtlasFill = Color(0xFFEAEEE7); // subtle sage fill
-  static const Color kAtlasBorder = Color(0xFFD1D6CD); // border / divider
+  static const Color kAtlasFill = Color(0xFFEAEEE7); // surface-100 sage fill
+  static const Color kAtlasBorder = Color(0xFFD1D6CD); // surface-300 border
+  static const Color kAtlasBorderTop = Color(0xFFD1D7CC); // surface-200 divider
   static const Color kAtlasGreen = Color(0xFF6EA924); // brand-500
   static const Color kAtlasGreenPale = Color(0xFFF4F8EC);
 
@@ -212,9 +215,9 @@ class _DesktopHomePageState extends State<DesktopHomePage>
         text.toUpperCase(),
         style: const TextStyle(
           fontFamily: kAtlasBodyFont,
-          fontSize: 11,
-          fontWeight: FontWeight.w600,
-          letterSpacing: 0.88, // ~0.08em at 11px
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.0, // 0.1em at 10px
           color: kAtlasInk500,
         ),
       ),
@@ -225,8 +228,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   Widget _buildCard({required Widget child, EdgeInsets? padding}) {
     return Container(
       margin: const EdgeInsets.only(
-          left: kAtlasPanePad, right: kAtlasPanePad, bottom: 12),
-      padding: padding ?? const EdgeInsets.fromLTRB(16, 14, 12, 14),
+          left: kAtlasPanePad, right: kAtlasPanePad, bottom: 14),
+      padding: padding ?? const EdgeInsets.fromLTRB(16, 14, 16, 14),
       decoration: BoxDecoration(
         color: kAtlasCard,
         borderRadius: BorderRadius.circular(12),
@@ -259,9 +262,9 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Divider(height: 1, thickness: 1, color: kAtlasBorder),
+        const Divider(height: 1, thickness: 1, color: kAtlasBorderTop),
         Container(
-          padding: const EdgeInsets.fromLTRB(kAtlasPanePad, 12, 14, 14),
+          padding: const EdgeInsets.fromLTRB(kAtlasPanePad, 14, kAtlasPanePad, 14),
           child: Obx(
             () => Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -276,17 +279,17 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                         translate('Allow remote control'),
                         style: const TextStyle(
                           fontFamily: kAtlasBodyFont,
-                          fontSize: 14,
+                          fontSize: 13,
                           fontWeight: FontWeight.w500,
-                          color: kAtlasInk900,
+                          color: kAtlasInk700,
                         ),
                       ),
-                      const SizedBox(height: 2),
+                      const SizedBox(height: 1),
                       Text(
                         translate('Turns incoming connections on or off.'),
                         style: const TextStyle(
                           fontFamily: kAtlasBodyFont,
-                          fontSize: 12,
+                          fontSize: 11,
                           height: 1.3,
                           color: kAtlasInk500,
                         ),
@@ -327,16 +330,16 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                 translate("This Device's ID").toUpperCase(),
                 style: const TextStyle(
                   fontFamily: kAtlasBodyFont,
-                  fontSize: 11,
+                  fontSize: 10,
                   fontWeight: FontWeight.w600,
-                  letterSpacing: 0.88,
+                  letterSpacing: 0.8, // 0.08em at 10px
                   color: kAtlasInk500,
                 ),
               ),
               buildPopupMenu(context),
             ],
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -358,9 +361,9 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                     ),
                     style: const TextStyle(
                       fontFamily: kAtlasMonoFont,
-                      fontSize: 34,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 1.0,
+                      fontSize: 25,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.5, // 0.02em at 25px
                       height: 1.05,
                       color: kAtlasInk900,
                     ),
@@ -371,6 +374,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                 context,
                 icon: Icons.copy_rounded,
                 tooltip: translate('Copy'),
+                size: 30,
+                filled: true,
                 onTap: () {
                   Clipboard.setData(ClipboardData(text: model.serverId.text));
                   showToast(translate("Copied"));
@@ -383,33 +388,42 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     );
   }
 
-  // Small square ghost icon button (copy / refresh) — ink-500 icon that goes
-  // ink-900 on a pale-green square on hover.
+  // Small square icon button. Two variants matching the Claude Design spec:
+  //  • filled (copy / eye / refresh): 30×30 or 28×28, radius 7, solid
+  //    surface-100 fill, text-secondary (ink-600) icon.
+  //  • ghost (the "…" menu): 26×26, radius 7, transparent, text-label (ink-500)
+  //    icon that goes ink-900 on a pale-green square on hover.
   Widget _buildIconButton(BuildContext context,
       {required IconData icon,
       required String tooltip,
       required VoidCallback onTap,
+      double size = 26,
+      bool filled = false,
       Widget? iconWidget}) {
     final hover = false.obs;
     return Obx(
       () => Tooltip(
         message: tooltip,
         child: InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(7),
           onTap: onTap,
           onHover: (v) => hover.value = v,
           child: Container(
-            width: 32,
-            height: 32,
+            width: size,
+            height: size,
             decoration: BoxDecoration(
-              color: hover.value ? kAtlasGreenPale : Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
+              color: filled
+                  ? (hover.value ? const Color(0xFFD1D7CC) : kAtlasFill)
+                  : (hover.value ? kAtlasGreenPale : Colors.transparent),
+              borderRadius: BorderRadius.circular(7),
             ),
             child: iconWidget ??
                 Icon(
                   icon,
-                  size: 18,
-                  color: hover.value ? kAtlasInk900 : kAtlasInk500,
+                  size: 15,
+                  color: filled
+                      ? kAtlasInk600
+                      : (hover.value ? kAtlasInk900 : kAtlasInk500),
                 ),
           ),
         ),
@@ -456,9 +470,9 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                 translate("Password").toUpperCase(),
                 style: const TextStyle(
                   fontFamily: kAtlasBodyFont,
-                  fontSize: 11,
+                  fontSize: 10,
                   fontWeight: FontWeight.w600,
-                  letterSpacing: 0.88,
+                  letterSpacing: 0.8, // 0.08em at 10px
                   color: kAtlasInk500,
                 ),
               ),
@@ -489,9 +503,9 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                     ),
                     style: const TextStyle(
                       fontFamily: kAtlasMonoFont,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w500,
-                      letterSpacing: 2.0,
+                      fontSize: 19,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.14, // 0.06em at 19px
                       color: kAtlasInk900,
                     ),
                   ).workaroundFreezeLinuxMint(),
@@ -501,6 +515,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                 context,
                 icon: Icons.copy_rounded,
                 tooltip: translate('Copy'),
+                size: 28,
+                filled: true,
                 onTap: () {
                   if (showOneTime) {
                     Clipboard.setData(
@@ -516,11 +532,13 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                   context,
                   icon: Icons.refresh,
                   tooltip: translate('Refresh Password'),
+                  size: 28,
+                  filled: true,
                   onTap: () => bind.mainUpdateTemporaryPassword(),
                   iconWidget: AnimatedRotationWidget(
                     onPressed: () => bind.mainUpdateTemporaryPassword(),
                     child: const Icon(Icons.refresh,
-                        size: 18, color: kAtlasInk500),
+                        size: 14, color: kAtlasInk600),
                   ),
                 )
               else if (!bind.isDisableSettings())
@@ -528,6 +546,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                   context,
                   icon: Icons.edit_outlined,
                   tooltip: translate('Change Password'),
+                  size: 28,
+                  filled: true,
                   onTap: () =>
                       DesktopSettingPage.switch2page(SettingsTabKey.safety),
                 ),
@@ -550,7 +570,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
         onTap: active ? null : onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 120),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: active ? kAtlasCard : Colors.transparent,
             borderRadius: BorderRadius.circular(6),
@@ -568,7 +588,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
             label,
             style: TextStyle(
               fontFamily: kAtlasBodyFont,
-              fontSize: 11,
+              fontSize: 12.5,
               fontWeight: active ? FontWeight.w600 : FontWeight.w500,
               color: active ? kAtlasInk900 : kAtlasInk500,
             ),
@@ -581,7 +601,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
       padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
         color: kAtlasFill,
-        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: kAtlasBorder, width: 1),
+        borderRadius: BorderRadius.circular(7),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -603,14 +624,14 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     final isOutgoingOnly = bind.isOutgoingOnly();
     return Padding(
       padding: const EdgeInsets.only(
-          left: kAtlasPanePad, right: kAtlasPanePad, top: 2, bottom: 10),
+          left: kAtlasPanePad, right: kAtlasPanePad, top: 12, bottom: 10),
       child: Text(
         translate(isOutgoingOnly ? "outgoing_only_desk_tip" : "desk_tip"),
         overflow: TextOverflow.clip,
         style: const TextStyle(
           fontFamily: kAtlasBodyFont,
-          fontSize: 13,
-          height: 1.4,
+          fontSize: 12,
+          height: 1.6,
           color: kAtlasInk500,
         ),
       ),
