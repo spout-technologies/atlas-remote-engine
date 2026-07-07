@@ -386,12 +386,18 @@ class LoginWidgetOP extends StatelessWidget {
 //   field fill #FFFFFF · border #D1D6CD (surface-300) · radius 8px ·
 //   36px height · ink body #44403C · placeholder #858585 (ink-500) ·
 //   focus → brand-500 #6EA924 border + soft green glow.
-const Color _kAtlasFieldFill = Color(0xFFFFFFFF);
-const Color _kAtlasFieldBorder = Color(0xFFD1D6CD); // surface-300
-const Color _kAtlasInkBody = Color(0xFF44403C); // ink-700 body
-const Color _kAtlasInkHeading = Color(0xFF1C1917); // ink-900 heading
-const Color _kAtlasInkMuted = Color(0xFF858585); // ink-500 placeholder/label
-const Color _kAtlasInkLabel = Color(0xFF444241); // ink-600 field label
+//
+// Colours are now sourced from the context-aware getters in common.dart
+// (atlasCardColor / atlasBorderColor / atlasInkBody / atlasInkPrimary /
+// atlasInkMuted / kAtlasBrandGreen) so the card renders correctly in BOTH
+// light and dark shells. The light-mode values below are preserved exactly:
+//   fill    #FFFFFF  → atlasCardColor(context)  (white in light)
+//   border  #D1D6CD  → atlasBorderColor(context)
+//   ink body #44403C → atlasInkBody(context)
+//   heading  #1C1917 → atlasInkPrimary(context)
+//   muted    #858585 → atlasInkMuted(context)
+//   label    #444241 → atlasInkBody(context)    (≈#44403C; 1pt delta)
+// The green accent (#6EA924) stays constant across both modes.
 const double _kAtlasFieldRadius = 8.0;
 
 /// A single Atlas-styled login field (label above a bespoke text field),
@@ -460,14 +466,14 @@ class _AtlasLoginFieldState extends State<_AtlasLoginField> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Field label — Inter 13/500, ink-600.
+        // Field label — Inter 13/500, ink-600 (light) / dark-aware.
         Text(
           translate(widget.label),
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: kAtlasBodyFont,
             fontSize: 13,
             fontWeight: FontWeight.w500,
-            color: _kAtlasInkLabel,
+            color: atlasInkBody(context),
           ),
         ),
         const SizedBox(height: 6),
@@ -495,20 +501,22 @@ class _AtlasLoginFieldState extends State<_AtlasLoginField> {
           autofillHints:
               widget.autofillEmail ? const [AutofillHints.username] : null,
           onSubmitted: (_) => widget.onSubmitted?.call(),
-          style: const TextStyle(
+          style: TextStyle(
             fontFamily: kAtlasBodyFont,
             fontSize: 14,
-            color: _kAtlasInkBody,
+            color: atlasInkBody(context),
           ),
           decoration: InputDecoration(
             isDense: true,
             filled: true,
-            fillColor: _kAtlasFieldFill,
+            // Design uses white fields in light; in dark defer to the card
+            // surface so the field reads on the dark shell.
+            fillColor: atlasCardColor(context),
             hintText: translate(widget.hintText),
-            hintStyle: const TextStyle(
+            hintStyle: TextStyle(
               fontFamily: kAtlasBodyFont,
               fontSize: 14,
-              color: _kAtlasInkMuted,
+              color: atlasInkMuted(context),
             ),
             // 36px effective height: 14px text + symmetric 9px padding.
             contentPadding:
@@ -521,7 +529,7 @@ class _AtlasLoginFieldState extends State<_AtlasLoginField> {
                           ? Icons.visibility_outlined
                           : Icons.visibility_off_outlined,
                       size: 18,
-                      color: _kAtlasInkMuted,
+                      color: atlasInkMuted(context),
                     ),
                     onPressed: () => setState(() => _visible = !_visible),
                   )
@@ -529,7 +537,7 @@ class _AtlasLoginFieldState extends State<_AtlasLoginField> {
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(_kAtlasFieldRadius),
               borderSide: BorderSide(
-                color: hasError ? MyTheme.dark : _kAtlasFieldBorder,
+                color: hasError ? MyTheme.dark : atlasBorderColor(context),
                 width: 1,
               ),
             ),
@@ -545,7 +553,7 @@ class _AtlasLoginFieldState extends State<_AtlasLoginField> {
             ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(_kAtlasFieldRadius),
-              borderSide: const BorderSide(color: _kAtlasFieldBorder, width: 1),
+              borderSide: BorderSide(color: atlasBorderColor(context), width: 1),
             ),
           ),
           ),
@@ -614,22 +622,22 @@ class LoginWidgetUserPass extends StatelessWidget {
             // Design: font-family:var(--font-display); font-size:20px;
             // font-weight:700; color:var(--text-heading) #1C1917. The heading
             // is a plain <div> (not an h-tag) so it inherits NO letter-spacing.
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: kAtlasDisplayFont,
               fontSize: 20,
               fontWeight: FontWeight.w700,
-              color: _kAtlasInkHeading,
+              color: atlasInkPrimary(context),
             ),
           ),
           const SizedBox(height: 5),
           Text(
             translate('Connect this device to your Atlas-managed fleet.'),
             textAlign: TextAlign.center,
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: kAtlasBodyFont,
               fontSize: 12.5,
               height: 1.5,
-              color: _kAtlasInkMuted,
+              color: atlasInkMuted(context),
             ),
           ),
           const SizedBox(height: 24),
@@ -727,10 +735,10 @@ class LoginWidgetUserPass extends StatelessWidget {
               Text(
                 translate("Don't have an Atlas account?"),
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: kAtlasBodyFont,
                   fontSize: 12,
-                  color: _kAtlasInkMuted,
+                  color: atlasInkMuted(context),
                 ),
               ),
               const SizedBox(width: 4),
@@ -967,8 +975,9 @@ Future<bool?> loginDialog() async {
               size: 15, // design close svg 15×15
               // No need to handle the branch of null.
               // Because we can ensure the color is not null when debug.
-              // Design close colour = var(--text-label) = ink-500 #858585.
-              color: isCloseHovered ? Colors.white : _kAtlasInkMuted,
+              // Design close colour = var(--text-label) = ink-500 #858585
+              // (light) / dark-aware muted; white on hover (red hover bg).
+              color: isCloseHovered ? Colors.white : atlasInkMuted(context),
             ),
             onTap: onDialogCancel,
             hoverColor: Colors.red,

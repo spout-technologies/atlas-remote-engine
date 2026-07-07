@@ -178,7 +178,13 @@ class ConnectionManagerState extends State<ConnectionManager>
               buildTitleBar(),
               Expanded(
                 child: Center(
-                  child: Text(translate("Waiting")),
+                  child: Text(
+                    translate("Waiting"),
+                    style: TextStyle(
+                      color: atlasInkMuted(context),
+                      fontFamily: kAtlasBodyFont,
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -440,29 +446,25 @@ class _CmHeaderState extends State<_CmHeader>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    // Atlas card (was RustDesk blue gradient). Theme-aware surface so the
+    // consent card reads correctly in both light and dark mode.
     return Container(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10.0),
-        gradient: LinearGradient(
-          begin: Alignment.topRight,
-          end: Alignment.bottomLeft,
-          colors: [
-            Color(0xff00bfe1),
-            Color(0xff0071ff),
-          ],
-        ),
+        color: atlasCardColor(context),
+        borderRadius: BorderRadius.circular(12.0),
+        border: Border.all(color: atlasBorderColor(context)),
       ),
       margin: EdgeInsets.symmetric(horizontal: 5.0, vertical: 10.0),
       padding: EdgeInsets.only(
-        top: 10.0,
-        bottom: 10.0,
-        left: 10.0,
-        right: 5.0,
+        top: 12.0,
+        bottom: 12.0,
+        left: 12.0,
+        right: 8.0,
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildClientAvatar().marginOnly(right: 10.0),
+          _buildClientAvatar().marginOnly(right: 12.0),
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.start,
@@ -472,7 +474,8 @@ class _CmHeaderState extends State<_CmHeader>
                     child: Text(
                   client.name,
                   style: TextStyle(
-                    color: Colors.white,
+                    color: atlasInkPrimary(context),
+                    fontFamily: kAtlasBodyFont,
                     fontWeight: FontWeight.bold,
                     fontSize: 20,
                     overflow: TextOverflow.ellipsis,
@@ -482,35 +485,43 @@ class _CmHeaderState extends State<_CmHeader>
                 FittedBox(
                   child: Text(
                     "(${client.peerId})",
-                    style: TextStyle(color: Colors.white, fontSize: 14),
+                    style: TextStyle(
+                      color: atlasInkMuted(context),
+                      fontFamily: kAtlasMonoFont,
+                      fontSize: 14,
+                    ),
                   ),
                 ),
                 if (client.type_() == ClientType.terminal)
                   FittedBox(
                     child: Text(
                       translate("Terminal"),
-                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                      style: TextStyle(
+                          color: atlasInkMuted(context), fontSize: 12),
                     ),
                   ),
                 if (client.type_() == ClientType.file)
                   FittedBox(
                     child: Text(
                       translate("File Transfer"),
-                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                      style: TextStyle(
+                          color: atlasInkMuted(context), fontSize: 12),
                     ),
                   ),
                 if (client.type_() == ClientType.camera)
                   FittedBox(
                     child: Text(
                       translate("View Camera"),
-                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                      style: TextStyle(
+                          color: atlasInkMuted(context), fontSize: 12),
                     ),
                   ),
                 if (client.portForward.isNotEmpty)
                   FittedBox(
                     child: Text(
                       "Port Forward: ${client.portForward}",
-                      style: TextStyle(color: Colors.white70, fontSize: 12),
+                      style: TextStyle(
+                          color: atlasInkMuted(context), fontSize: 12),
                     ),
                   ),
                 SizedBox(height: 10.0),
@@ -523,7 +534,7 @@ class _CmHeaderState extends State<_CmHeader>
                               ? translate("Disconnected")
                               : translate("Connected")
                           : "${translate("Request access to your device")}...",
-                      style: TextStyle(color: Colors.white),
+                      style: TextStyle(color: atlasInkBody(context)),
                     ).marginOnly(right: 8.0),
                     if (client.authorized)
                       Obx(
@@ -531,7 +542,10 @@ class _CmHeaderState extends State<_CmHeader>
                           formatDurationToTime(
                             Duration(seconds: _time.value),
                           ),
-                          style: TextStyle(color: Colors.white),
+                          style: TextStyle(
+                            color: atlasInkBody(context),
+                            fontFamily: kAtlasMonoFont,
+                          ),
                         ),
                       )
                   ],
@@ -553,9 +567,12 @@ class _CmHeaderState extends State<_CmHeader>
                       .toggleCMChatPage(MessageKey(client.peerId, client.id));
                 }
               }),
-              icon: SvgPicture.asset(client.type_() == ClientType.file
-                  ? 'assets/file_transfer.svg'
-                  : 'assets/chat2.svg'),
+              icon: SvgPicture.asset(
+                client.type_() == ClientType.file
+                    ? 'assets/file_transfer.svg'
+                    : 'assets/chat2.svg',
+                colorFilter: svgColor(atlasInkBody(context)),
+              ),
               splashRadius: kDesktopIconButtonSplashRadius,
             ),
           )
@@ -571,24 +588,26 @@ class _CmHeaderState extends State<_CmHeader>
     return buildAvatarWidget(
           avatar: client.avatar,
           size: 70,
-          borderRadius: 15,
+          borderRadius: 12,
           fallback: _buildInitialAvatar(),
         ) ??
         _buildInitialAvatar();
   }
 
   Widget _buildInitialAvatar() {
+    // Atlas green initial tile (was a random str2color hash).
     return Container(
       width: 70,
       height: 70,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: str2color(client.name),
-        borderRadius: BorderRadius.circular(15.0),
+        color: kAtlasBrandGreen,
+        borderRadius: BorderRadius.circular(12.0),
       ),
       child: Text(
-        client.name.isNotEmpty ? client.name[0] : '?',
+        client.name.isNotEmpty ? client.name[0].toUpperCase() : '?',
         style: TextStyle(
+          fontFamily: kAtlasBodyFont,
           fontWeight: FontWeight.bold,
           color: Colors.white,
           fontSize: 55,
@@ -612,18 +631,28 @@ class _PrivilegeBoardState extends State<_PrivilegeBoard> {
   Widget buildPermissionIcon(bool enabled, IconData iconData,
       Function(bool)? onTap, String tooltipText,
       {required bool canModify}) {
+    // Atlas tiles: green when active (was RustDesk blue), neutral sage fill
+    // when off (was Colors.grey[700]). Icon ink flips white/muted to keep
+    // contrast in both states and both themes.
+    final borderRadius = BorderRadius.circular(8.0);
     return Tooltip(
       message: "$tooltipText: ${enabled ? "ON" : "OFF"}",
       waitDuration: Duration.zero,
       child: Container(
         decoration: BoxDecoration(
           color: enabled
-              ? (canModify ? MyTheme.accent : MyTheme.accent.withOpacity(0.6))
-              : Colors.grey[700],
-          borderRadius: BorderRadius.circular(10.0),
+              ? (canModify
+                  ? kAtlasBrandGreen
+                  : kAtlasBrandGreen.withOpacity(0.6))
+              : atlasFillColor(context),
+          borderRadius: borderRadius,
+          border: enabled
+              ? null
+              : Border.all(color: atlasBorderColor(context)),
         ),
         padding: EdgeInsets.all(8.0),
         child: InkWell(
+          borderRadius: borderRadius,
           onTap: canModify
               ? () =>
                   checkClickTime(widget.client.id, () => onTap?.call(!enabled))
@@ -634,7 +663,7 @@ class _PrivilegeBoardState extends State<_PrivilegeBoard> {
               Expanded(
                 child: Icon(
                   iconData,
-                  color: Colors.white,
+                  color: enabled ? Colors.white : atlasInkMuted(context),
                 ),
               ),
             ],
@@ -655,25 +684,23 @@ class _PrivilegeBoardState extends State<_PrivilegeBoard> {
       width: double.infinity,
       height: 160.0,
       margin: EdgeInsets.all(5.0),
-      padding: EdgeInsets.all(5.0),
+      padding: EdgeInsets.all(8.0),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(10.0),
-        color: Theme.of(context).colorScheme.background,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.2),
-            spreadRadius: 1,
-            blurRadius: 1,
-            offset: Offset(0, 1.5),
-          ),
-        ],
+        borderRadius: BorderRadius.circular(12.0),
+        color: atlasCardColor(context),
+        border: Border.all(color: atlasBorderColor(context)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Text(
             translate("Permissions"),
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              fontFamily: kAtlasBodyFont,
+              color: atlasInkPrimary(context),
+            ),
             textAlign: TextAlign.center,
           ).marginOnly(left: 4.0, bottom: 8.0),
           Expanded(
@@ -879,7 +906,7 @@ class _CmControlPanel extends StatelessWidget {
             children: [
               Expanded(
                 child: buildButton(context,
-                    color: MyTheme.accent,
+                    color: kAtlasBrandGreen,
                     onClick: null, onTapDown: (details) async {
                   final devicesInfo =
                       await AudioInput.getDevicesInfo(true, true);
@@ -965,7 +992,7 @@ class _CmControlPanel extends StatelessWidget {
             children: [
               Expanded(
                 child: buildButton(context,
-                    color: MyTheme.accent,
+                    color: kAtlasBrandGreen,
                     onClick: () => handleVoiceCall(true),
                     icon: Icon(
                       Icons.call_rounded,
@@ -1005,7 +1032,7 @@ class _CmControlPanel extends StatelessWidget {
           offstage: !showElevation,
           child: buildButton(
             context,
-            color: MyTheme.accent,
+            color: kAtlasBrandGreen,
             onClick: () {
               handleElevate(context);
               windowManager.minimize();
@@ -1045,7 +1072,7 @@ class _CmControlPanel extends StatelessWidget {
       children: [
         Expanded(
             child: buildButton(context,
-                color: MyTheme.accent,
+                color: kAtlasBrandGreen,
                 onClick: handleClose,
                 text: 'Close',
                 textColor: Colors.white)),
@@ -1065,7 +1092,7 @@ class _CmControlPanel extends StatelessWidget {
       children: [
         Offstage(
           offstage: !showElevation || !showAccept,
-          child: buildButton(context, color: Colors.green[700], onClick: () {
+          child: buildButton(context, color: kAtlasBrandGreen, onClick: () {
             handleAccept(context);
             handleElevate(context);
             windowManager.minimize();
@@ -1088,7 +1115,7 @@ class _CmControlPanel extends StatelessWidget {
                   children: [
                     buildButton(
                       context,
-                      color: MyTheme.accent,
+                      color: kAtlasBrandGreen,
                       onClick: () {
                         handleAccept(context);
                         windowManager.minimize();
@@ -1103,10 +1130,10 @@ class _CmControlPanel extends StatelessWidget {
               child: buildButton(
                 context,
                 color: Colors.transparent,
-                border: Border.all(color: Colors.grey),
+                border: Border.all(color: atlasBorderColor(context)),
                 onClick: handleDisconnect,
                 text: 'Cancel',
-                textColor: null,
+                textColor: atlasInkBody(context),
               ),
             ),
           ],
@@ -1141,7 +1168,7 @@ class _CmControlPanel extends StatelessWidget {
         ),
       );
     }
-    final borderRadius = BorderRadius.circular(10.0);
+    final borderRadius = BorderRadius.circular(8.0);
     final btn = Container(
       height: 28,
       decoration: BoxDecoration(
@@ -1245,10 +1272,11 @@ class __FileTransferLogPageState extends State<_FileTransferLogPage> {
   Widget generateCard(Widget child) {
     return Container(
       decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
+        color: atlasCardColor(context),
         borderRadius: BorderRadius.all(
-          Radius.circular(15.0),
+          Radius.circular(12.0),
         ),
+        border: Border.all(color: atlasBorderColor(context)),
       ),
       child: child,
     );

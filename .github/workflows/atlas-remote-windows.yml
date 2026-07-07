@@ -27,7 +27,7 @@ env:
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
   VCPKG_DEFAULT_TRIPLET: "x64-windows-static"
   VCPKG_DEFAULT_HOST_TRIPLET: "x64-windows-static"
-  VERSION: "1.5.7"
+  VERSION: "1.5.8"
 
 jobs:
   generate-bridge:

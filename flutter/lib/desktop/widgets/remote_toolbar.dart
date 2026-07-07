@@ -951,14 +951,23 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
         space: _ToolbarTheme.dividerSpaceToAction,
         color: _ToolbarTheme.dividerColor(context),
       ),
+      // Each top-level segment is a MenuBar, which paints its OWN Material
+      // surface on top of the dark atlasSurface pill. Inheriting the app-theme
+      // menu-bar background (white in light mode) made that row of MenuBars
+      // paint white over the pill — the white glyphs then vanished against it,
+      // leaving only their black-bordered white bodies. Force the MenuBar
+      // surface transparent (and kill the M3 elevation tint) so the dark pill
+      // shows through and the floating toolbar stays dark regardless of app
+      // light/dark theme.
       menuBarTheme: MenuBarThemeData(
           style: MenuStyle(
         padding: MaterialStatePropertyAll(EdgeInsets.zero),
         elevation: MaterialStatePropertyAll(0),
         shape: MaterialStatePropertyAll(BeveledRectangleBorder()),
-      ).copyWith(
-              backgroundColor:
-                  Theme.of(context).menuBarTheme.style?.backgroundColor)),
+        backgroundColor: MaterialStatePropertyAll(Colors.transparent),
+        surfaceTintColor: MaterialStatePropertyAll(Colors.transparent),
+        shadowColor: MaterialStatePropertyAll(Colors.transparent),
+      )),
     );
   }
 }
