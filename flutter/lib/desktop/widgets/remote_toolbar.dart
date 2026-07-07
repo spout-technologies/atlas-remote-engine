@@ -164,7 +164,7 @@ Alignment _alignmentForEdge(_ToolbarEdge edge, double fraction) {
 // The drag handle hangs off the side of the toolbar facing away from the
 // docked edge, so the icons themselves sit flush against that edge.
 BorderRadius _collapseHandleBorderRadius(_ToolbarEdge edge) {
-  const r = Radius.circular(5);
+  const r = Radius.circular(10); // design collapsed tab: border-radius 0 0 10px 10px
   switch (edge) {
     case _ToolbarEdge.top:
       return const BorderRadius.vertical(bottom: r);
@@ -333,11 +333,12 @@ class _ToolbarTheme {
   // glyphs, one green accent, red close). These tokens are the single source
   // of truth for the toolbar's colours; the button renderers below treat the
   // `color`/`hoverColor` props as the GLYPH colour on a transparent tile.
-  static const Color atlasSurface = Color(0xF01C1C1E); // dark pill bg (~0.94)
+  static const Color atlasSurface = Color(0xD11C1C1E); // dark pill bg (design rgba(28,28,30,0.82))
   static const Color atlasInk = Color(0xF2FFFFFF); // idle glyph (white ~0.95)
   static const Color atlasInkDim = Color(0x99FFFFFF); // muted glyph (~0.6)
   static const Color atlasAccent = MyTheme.accent; // Atlas green #6EA924
-  static const Color atlasHairline = Color(0x24FFFFFF); // dividers/border ~0.14
+  static const Color atlasHairline = Color(0x24FFFFFF); // seg dividers (design rgba(255,255,255,0.14))
+  static const Color atlasBorder = Color(0x1AFFFFFF); // pill/handle outer border (design rgba(255,255,255,0.10))
   static const Color atlasHover = Color(0x1FFFFFFF); // hover tile overlay ~0.12
   static const Color atlasDanger = Color(0xF2DC2626); // close/rec red (~0.95)
   static const Color atlasDangerDim = Color(0x59DC2626); // close hover tile
@@ -362,8 +363,8 @@ class _ToolbarTheme {
 
   static const double buttonSize = 32;
   static const double buttonHMargin = 2;
-  static const double buttonVMargin = 6;
-  static const double iconRadius = 8; // design: ~7–8px per button tile
+  static const double buttonVMargin = 5; // design pill vertical padding (5px)
+  static const double iconRadius = 7; // design: 7px per button tile (border-radius:7px)
   static const double elevation = 3;
 
   static double dividerSpaceToAction = isWindows ? 8 : 14;
@@ -404,7 +405,7 @@ class _ToolbarTheme {
     return Container(
       decoration: BoxDecoration(
         border: Border.all(
-          color: borderColor(context),
+          color: atlasBorder,
           width: 1,
         ),
         borderRadius: borderRadius,
@@ -3463,7 +3464,7 @@ class _DraggableShowHideState extends State<_DraggableShowHide> {
           // surface + hairline so it reads as one piece over the remote screen.
           color: _ToolbarTheme.toolbarSurface,
           border: Border.all(
-            color: _ToolbarTheme.borderColor(context),
+            color: _ToolbarTheme.atlasBorder,
             width: 1,
           ),
           borderRadius: widget.borderRadius,

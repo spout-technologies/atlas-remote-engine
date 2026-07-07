@@ -24,10 +24,13 @@ import 'login.dart';
 
 final hideAbTagsPanel = false.obs;
 
-// Atlas Remote — fleet toolbar design tokens.
+// Atlas Remote — fleet toolbar design tokens (DS .ds-field / .ds-input--sm /
+// .ds-select). Card fill #fff, border --surface-300, ink-500 (#858585) for
+// placeholder/icon/count, body ink (#44403C, --text-body) for field text.
 const Color _kAbCard = Color(0xFFFFFFFF);
 const Color _kAbBorder = Color(0xFFD1D6CD);
 const Color _kAbInk500 = Color(0xFF858585);
+const Color _kAbInkBody = Color(0xFF44403C);
 const String _kAllClients = '__atlas_all_clients__';
 
 class AddressBook extends StatefulWidget {
@@ -177,7 +180,10 @@ class _AddressBookState extends State<AddressBook> {
         value: _kAllClients,
         child: Text(
           '${translate('All')} ${translate('clients')}',
-          style: const TextStyle(fontSize: 12.5, fontFamily: kAtlasBodyFont),
+          style: const TextStyle(
+              fontSize: 12.5,
+              fontFamily: kAtlasBodyFont,
+              color: _kAbInkBody),
           overflow: TextOverflow.ellipsis,
         ),
       ),
@@ -199,7 +205,9 @@ class _AddressBookState extends State<AddressBook> {
                   child: Text(
                     e.toString(),
                     style: const TextStyle(
-                        fontSize: 12.5, fontFamily: kAtlasBodyFont),
+                        fontSize: 12.5,
+                        fontFamily: kAtlasBodyFont,
+                        color: _kAbInkBody),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
@@ -210,7 +218,8 @@ class _AddressBookState extends State<AddressBook> {
     return Container(
       width: 200,
       height: 32,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      // DS .ds-select insets: text left 12, chevron right 10.
+      padding: const EdgeInsets.only(left: 12, right: 10),
       decoration: BoxDecoration(
         color: _kAbCard,
         borderRadius: BorderRadius.circular(8),
@@ -261,7 +270,9 @@ class _AddressBookState extends State<AddressBook> {
         child: TextField(
           controller: peerSearchTextController,
           onChanged: (value) => peerSearchText.value = value,
-          style: const TextStyle(fontSize: 12.5, fontFamily: kAtlasBodyFont),
+          // DS .ds-input--sm: 13px; field text = --text-body (#44403C).
+          style: const TextStyle(
+              fontSize: 13, fontFamily: kAtlasBodyFont, color: _kAbInkBody),
           decoration: InputDecoration(
             isDense: true,
             border: InputBorder.none,
@@ -271,7 +282,7 @@ class _AddressBookState extends State<AddressBook> {
                 const BoxConstraints(minWidth: 32, minHeight: 32),
             hintText: translate('Search devices'),
             hintStyle: const TextStyle(
-              fontSize: 12.5,
+              fontSize: 13,
               fontFamily: kAtlasBodyFont,
               color: _kAbInk500,
             ),
