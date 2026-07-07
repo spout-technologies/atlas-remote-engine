@@ -657,6 +657,23 @@ class LoginWidgetUserPass extends StatelessWidget {
             onSubmitted: onLogin,
           ),
 
+          // ── "Forgot password?" link ──
+          // Design: right-aligned link button, margin-top:6px, xs (18px).
+          // Opens the Atlas account portal (not an in-app reset flow).
+          Align(
+            alignment: Alignment.centerRight,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: _AtlasLoginLink(
+                label: 'Forgot password?',
+                onTap: () => launchUrl(
+                  Uri.parse('https://atlasos.work'),
+                  mode: LaunchMode.externalApplication,
+                ),
+              ),
+            ),
+          ),
+
           // NOT use Offstage to wrap LinearProgressIndicator
           if (isInProgress)
             const Padding(
@@ -698,7 +715,71 @@ class LoginWidgetUserPass extends StatelessWidget {
                   ),
                 )),
           ),
+
+          // ── Footer sign-up line ──
+          // Design: centred, margin-top:20px, 12px, muted text with a green
+          // "Get started at atlasos.work ↗" link to the account portal.
+          const SizedBox(height: 20),
+          Wrap(
+            alignment: WrapAlignment.center,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                translate("Don't have an Atlas account?"),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: kAtlasBodyFont,
+                  fontSize: 12,
+                  color: _kAtlasInkMuted,
+                ),
+              ),
+              const SizedBox(width: 4),
+              _AtlasLoginLink(
+                label: 'Get started at atlasos.work ↗',
+                fontSize: 12,
+                onTap: () => launchUrl(
+                  Uri.parse('https://atlasos.work'),
+                  mode: LaunchMode.externalApplication,
+                ),
+              ),
+            ],
+          ),
         ],
+      ),
+    );
+  }
+}
+
+/// A green Atlas text link (design Button variant="link"): brand-500 #6EA924,
+/// Inter, weight 500, no chrome. Opens the account portal via `onTap`.
+class _AtlasLoginLink extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  final double fontSize;
+
+  const _AtlasLoginLink({
+    Key? key,
+    required this.label,
+    required this.onTap,
+    this.fontSize = 12,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+        child: Text(
+          translate(label),
+          style: TextStyle(
+            fontFamily: kAtlasBodyFont,
+            fontSize: fontSize,
+            fontWeight: FontWeight.w500,
+            color: MyTheme.accent, // brand-500 #6EA924
+          ),
+        ),
       ),
     );
   }

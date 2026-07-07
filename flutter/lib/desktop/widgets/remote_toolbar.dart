@@ -341,7 +341,11 @@ class _ToolbarTheme {
   static const Color atlasBorder = Color(0x1AFFFFFF); // pill/handle outer border (design rgba(255,255,255,0.10))
   static const Color atlasHover = Color(0x1FFFFFFF); // hover tile overlay ~0.12
   static const Color atlasDanger = Color(0xF2DC2626); // close/rec red (~0.95)
-  static const Color atlasDangerDim = Color(0x59DC2626); // close hover tile
+  // Design close/active-record tile: a persistently FILLED red tile
+  // (rgba(220,38,38,0.85)) with a white glyph — not a red-tinted glyph on a
+  // transparent tile. Used by the Close segment and the active recording state.
+  static const Color atlasDangerFill = Color(0xD9DC2626); // filled close tile (design rgba(220,38,38,0.85))
+  static const Color atlasDangerGlyph = Color(0xFFFFFFFF); // white glyph on filled red tile
 
   // The glyph colour used by idle top-level buttons. Green is reserved for
   // active/selected/pinned states, so idle glyphs read as near-white ink.
@@ -361,7 +365,8 @@ class _ToolbarTheme {
   static const double height = 20.0;
   static const double dividerHeight = 12.0;
 
-  static const double buttonSize = 32;
+  static const double buttonSize = 32; // design: 32px tile (hover target + tap area)
+  static const double glyphSize = 15; // design: ~14px glyph centred inside the 32px tile
   static const double buttonHMargin = 2;
   static const double buttonVMargin = 5; // design pill vertical padding (5px)
   static const double iconRadius = 7; // design: 7px per button tile (border-radius:7px)
@@ -2841,23 +2846,40 @@ class _IconMenuButtonState extends State<_IconMenuButton> {
   @override
   Widget build(BuildContext context) {
     assert(widget.assetName != null || widget.icon != null);
-    // Atlas: the glyph is tinted by `color`/`hoverColor` (idle = near-white
-    // ink, green when active, red for close). The tile itself stays
-    // transparent, gaining only a faint white overlay on hover — matching the
-    // floating design instead of filling every button with a solid colour.
+    // Atlas structural fidelity (design: 32px tile, 14px glyph centred):
+    //  • The 32×32 box is the hover target + tap area; the SVG glyph sits at
+    //    ~14px, Centered inside it — so the glyph no longer IS the tile.
+    //  • Idle buttons keep a transparent tile with a faint white hover overlay
+    //    and tint the glyph via `color`/`hoverColor` (white ink / green active).
+    //  • Close (and active-record) is a persistently FILLED red tile with a
+    //    white glyph, matching the design's rgba(220,38,38,0.85) close segment.
     final bool isCloseAction =
         widget.color == _ToolbarTheme.redColor || widget.hoverColor == _ToolbarTheme.redColor;
-    final Color glyphColor = hover ? widget.hoverColor : widget.color;
-    final Color tileColor = hover
-        ? (isCloseAction ? _ToolbarTheme.atlasDangerDim : _ToolbarTheme.atlasHover)
-        : Colors.transparent;
-    final icon = widget.icon ??
+    final Color glyphColor = isCloseAction
+        ? _ToolbarTheme.atlasDangerGlyph // white glyph on the filled red tile
+        : (hover ? widget.hoverColor : widget.color);
+    final Color tileColor = isCloseAction
+        ? (hover ? _ToolbarTheme.atlasDanger : _ToolbarTheme.atlasDangerFill)
+        : (hover ? _ToolbarTheme.atlasHover : Colors.transparent);
+    // The glyph: a ~14px SVG for asset-driven buttons. A caller-supplied
+    // `widget.icon` (e.g. the monitor-switcher composite) already sizes itself,
+    // so it is only re-centred, not resized.
+    final Widget glyph = widget.icon ??
         SvgPicture.asset(
           widget.assetName!,
           colorFilter: ColorFilter.mode(glyphColor, BlendMode.srcIn),
-          width: _ToolbarTheme.buttonSize,
-          height: _ToolbarTheme.buttonSize,
+          width: _ToolbarTheme.glyphSize,
+          height: _ToolbarTheme.glyphSize,
         );
+    // 32px-high tile (keeps the hover fill + tap target) with the glyph
+    // centred inside. Height is fixed at 32px; width follows `widget.width`
+    // when a caller sizes a wider composite (e.g. the monitors widget), else
+    // the 32px square — so a 14px asset glyph centres and nothing wide clips.
+    final Widget tile = SizedBox(
+      width: widget.width ?? _ToolbarTheme.buttonSize,
+      height: _ToolbarTheme.buttonSize,
+      child: Center(child: glyph),
+    );
     var button = SizedBox(
       width: widget.width ?? _ToolbarTheme.buttonSize,
       height: _ToolbarTheme.buttonSize,
@@ -2880,7 +2902,7 @@ class _IconMenuButtonState extends State<_IconMenuButton> {
                           BorderRadius.circular(_ToolbarTheme.iconRadius),
                       color: tileColor,
                     ),
-                    child: icon)),
+                    child: tile)),
           )),
     ).marginSymmetric(
         horizontal: widget.hMargin ?? _ToolbarTheme.buttonHMargin,
@@ -2936,18 +2958,29 @@ class _IconSubmenuButtonState extends State<_IconSubmenuButton> {
   @override
   Widget build(BuildContext context) {
     assert(widget.svg != null || widget.icon != null);
-    // Atlas: tint the glyph (idle = near-white ink, green when active); keep
-    // the tile transparent with a faint white hover overlay, matching the
-    // floating design rather than a solid-colour button.
+    // Atlas structural fidelity (design: 32px tile, 14px glyph centred):
+    // tint the glyph (idle = near-white ink, green when active) and centre a
+    // ~14px SVG inside the 32×32 tile, which stays transparent with a faint
+    // white hover overlay — the glyph is no longer the tile.
     final Color glyphColor = hover ? widget.hoverColor : widget.color;
     final Color tileColor = hover ? _ToolbarTheme.atlasHover : Colors.transparent;
-    final icon = widget.icon ??
+    // A caller-supplied `widget.icon` (e.g. the monitors composite) already
+    // sizes itself, so it is only re-centred; asset glyphs render at ~14px.
+    final Widget glyph = widget.icon ??
         SvgPicture.asset(
           widget.svg!,
           colorFilter: ColorFilter.mode(glyphColor, BlendMode.srcIn),
-          width: _ToolbarTheme.buttonSize,
-          height: _ToolbarTheme.buttonSize,
+          width: _ToolbarTheme.glyphSize,
+          height: _ToolbarTheme.glyphSize,
         );
+    // 32px-high tile; width follows `widget.width` when a caller sizes a wider
+    // composite (e.g. the monitors widget), else the 32px square — so a 14px
+    // asset glyph centres and nothing wide clips.
+    final Widget tile = SizedBox(
+      width: widget.width ?? _ToolbarTheme.buttonSize,
+      height: _ToolbarTheme.buttonSize,
+      child: Center(child: glyph),
+    );
     final button = SizedBox(
         width: widget.width ?? _ToolbarTheme.buttonSize,
         height: _ToolbarTheme.buttonSize,
@@ -2968,7 +3001,7 @@ class _IconSubmenuButtonState extends State<_IconSubmenuButton> {
                               BorderRadius.circular(_ToolbarTheme.iconRadius),
                           color: tileColor,
                         ),
-                        child: icon))),
+                        child: tile))),
             menuChildren: widget
                 .menuChildrenGetter(this)
                 .map((e) => _buildPointerTrackWidget(e, widget.ffi))
