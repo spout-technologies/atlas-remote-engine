@@ -153,9 +153,11 @@ jobs:
           # setup name. On first run it invokes the Atlas Remote install engine
           # (installs to C:\Program Files\Atlas Remote + Start-menu shortcut).
           SETUP="AtlasRemote-${VERSION}-x86_64-windows-setup.exe"
-          SRC="$(ls -1 AtlasRemote-*-install.exe rustdesk-*-install.exe 2>/dev/null | head -1)"
-          if [ -z "$SRC" ] || [ ! -f "$SRC" ]; then
-            echo "Installer exe not found at repo root:"; ls -la *.exe 2>/dev/null || true; exit 1
+          # build.py names it deterministically from the (stamped) Cargo.toml
+          # version — reference it directly; a no-match glob under set -e aborts.
+          SRC="AtlasRemote-${VERSION}-install.exe"
+          if [ ! -f "$SRC" ]; then
+            echo "::error::installer exe not found: $SRC"; ls -la *.exe 2>/dev/null || true; exit 1
           fi
           mv "$SRC" "$SETUP"
           (sha256sum "$SETUP" || shasum -a 256 "$SETUP") > "$SETUP.sha256"
