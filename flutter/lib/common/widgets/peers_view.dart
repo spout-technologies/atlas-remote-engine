@@ -257,13 +257,16 @@ class _PeersViewState extends State<_PeersView>
               // No need to listen the currentTab change event.
               // Because the currentTab change event will trigger the peers change event,
               // and the peers change event will trigger _buildPeersView().
-              if (widget.forceListLayout && !isPortrait) {
-                return Container(
-                    height: widget.rowHeight ?? 45, child: visibilityChild);
-              }
+              // List view sizes to a row (Atlas tables use their taller
+              // rowHeight); grid/tile get card boxes. Reactive to "Change view"
+              // on every tab, incl. the forceListLayout Atlas tables.
               return !isPortrait
                   ? Obx(() => peerCardUiType.value == PeerUiType.list
-                      ? Container(height: 45, child: visibilityChild)
+                      ? Container(
+                          height: widget.forceListLayout
+                              ? (widget.rowHeight ?? 45)
+                              : 45,
+                          child: visibilityChild)
                       : peerCardUiType.value == PeerUiType.grid
                           ? SizedBox(
                               width: 220, height: 140, child: visibilityChild)
@@ -278,20 +281,10 @@ class _PeersViewState extends State<_PeersView>
             // Atlas: Recent tab renders a borderless full-width table — no
             // inter-row spacing, no right gutter (the 1px separators + card
             // border come from the Atlas row widget itself).
-            if (widget.forceListLayout) {
-              final tableChild = ListView.builder(
-                controller: _scrollController,
-                itemCount: peers.length,
-                itemBuilder: (BuildContext context, int index) {
-                  return buildOnePeer(peers[index], false);
-                },
-              );
-              if (updateEvent == UpdateEvent.load) {
-                _curPeers.clear();
-                _curPeers.addAll(peers.map((e) => e.id));
-                _queryOnlines(true);
-              }
-              return tableChild;
+            if (updateEvent == UpdateEvent.load) {
+              _curPeers.clear();
+              _curPeers.addAll(peers.map((e) => e.id));
+              _queryOnlines(true);
             }
             final Widget child = Obx(() => stateGlobal.isPortrait.isTrue
                 ? ListView.builder(
@@ -306,10 +299,15 @@ class _PeersViewState extends State<_PeersView>
                         controller: _scrollController,
                         itemCount: peers.length,
                         itemBuilder: (BuildContext context, int index) {
-                          return buildOnePeer(peers[index], false).marginOnly(
-                              right: space,
-                              top: index == 0 ? 0 : space / 2,
-                              bottom: space / 2);
+                          // Atlas tables (forceListLayout) render borderless,
+                          // full-width; stock list tabs keep the right gutter.
+                          final row = buildOnePeer(peers[index], false);
+                          return widget.forceListLayout
+                              ? row
+                              : row.marginOnly(
+                                  right: space,
+                                  top: index == 0 ? 0 : space / 2,
+                                  bottom: space / 2);
                         },
                       )
                     : DynamicGridView.builder(
@@ -320,12 +318,6 @@ class _PeersViewState extends State<_PeersView>
                         itemBuilder: (BuildContext context, int index) {
                           return buildOnePeer(peers[index], false);
                         }));
-
-            if (updateEvent == UpdateEvent.load) {
-              _curPeers.clear();
-              _curPeers.addAll(peers.map((e) => e.id));
-              _queryOnlines(true);
-            }
             return child;
           } else {
             return const Center(
@@ -498,7 +490,11 @@ class RecentPeersView extends BasePeersView {
           forceListLayout: isDesktop || isWebDesktop,
           rowHeight: 52,
           peerCardBuilder: (Peer peer) => (isDesktop || isWebDesktop)
-              ? _AtlasRecentDeviceRow(peer: peer)
+              // List → Atlas device-table row; grid/tile → stock large-icon
+              // card (AnyDesk-style), switched live by "Change view".
+              ? Obx(() => peerCardUiType.value == PeerUiType.list
+                  ? _AtlasRecentDeviceRow(peer: peer)
+                  : RecentPeerCard(peer: peer, menuPadding: menuPadding))
               : RecentPeerCard(
                   peer: peer,
                   menuPadding: menuPadding,
@@ -512,9 +508,14 @@ class RecentPeersView extends BasePeersView {
     if (!(isDesktop || isWebDesktop)) {
       return peersView;
     }
-    // Wrap the table body in a white card with a header row
-    // (DEVICE | CLIENT | LAST CONNECTED).
-    return Container(
+    // Grid/tile → AnyDesk-style large-icon cards (no table chrome). List → the
+    // Atlas device table (card + DEVICE|CLIENT|LAST CONNECTED header). Reactive
+    // to the "Change view" control.
+    return Obx(() {
+      if (peerCardUiType.value != PeerUiType.list) {
+        return peersView;
+      }
+      return Container(
       margin: const EdgeInsets.only(right: 12),
       decoration: BoxDecoration(
         color: atlasCardColor(context),
@@ -560,6 +561,7 @@ class RecentPeersView extends BasePeersView {
         ],
       ),
     );
+    });
   }
 }
 
@@ -1055,7 +1057,11 @@ class AddressBookPeersView extends BasePeersView {
           peerFilter: (Peer peer) =>
               _hitTag(gFFI.abModel.selectedTags, peer.tags),
           peerCardBuilder: (Peer peer) => (isDesktop || isWebDesktop)
-              ? _AtlasAbDeviceRow(peer: peer)
+              // List → Atlas fleet-table row; grid/tile → stock large-icon
+              // card (AnyDesk-style), switched live by "Change view".
+              ? Obx(() => peerCardUiType.value == PeerUiType.list
+                  ? _AtlasAbDeviceRow(peer: peer)
+                  : AddressBookPeerCard(peer: peer, menuPadding: menuPadding))
               : AddressBookPeerCard(
                   peer: peer,
                   menuPadding: menuPadding,
@@ -1068,9 +1074,14 @@ class AddressBookPeersView extends BasePeersView {
     if (!(isDesktop || isWebDesktop)) {
       return peersView;
     }
-    // Wrap the fleet body in the same white card + header row as the Recent
-    // table (DEVICE | CLIENT | USER | ACCESS), so the two lists are consistent.
-    return Container(
+    // Grid/tile → AnyDesk-style large-icon cards (no table chrome). List → the
+    // Atlas fleet table (card + DEVICE|CLIENT|USER|ACCESS header). Reactive to
+    // the "Change view" control.
+    return Obx(() {
+      if (peerCardUiType.value != PeerUiType.list) {
+        return peersView;
+      }
+      return Container(
       decoration: BoxDecoration(
         color: atlasCardColor(context),
         borderRadius: BorderRadius.circular(8),
@@ -1109,6 +1120,7 @@ class AddressBookPeersView extends BasePeersView {
         ],
       ),
     );
+    });
   }
 
   // Public wrapper so the fleet toolbar can compute an honest "N of M" count

@@ -162,8 +162,11 @@ class _AtlasStatusPill extends StatelessWidget {
       // and the pill keeps a right margin so there is a clear gap before the
       // min/max/close buttons that follow it in the tail Row.
       return Container(
-        margin: const EdgeInsets.only(left: 8, right: 10, top: 6, bottom: 6),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        // No vertical margin: the tab bar is a hard 28px (kDesktopRemoteTabBarHeight),
+        // so top/bottom margin pushed the pill's box past it and clipped its
+        // rounded ends. The Row centres the ~24px pill in the 28px bar instead.
+        margin: const EdgeInsets.only(left: 8, right: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
           color: pillBg,
           borderRadius: BorderRadius.circular(999),

@@ -375,25 +375,6 @@ class _ConnectionPageState extends State<ConnectionPage>
                   optionsBuilder: (TextEditingValue textEditingValue) {
                     if (textEditingValue.text == '') {
                       _autocompleteOpts = const Iterable<Peer>.empty();
-                    } else if (_allPeersLoader.peers.isEmpty &&
-                        !_allPeersLoader.isPeersLoaded) {
-                      Peer emptyPeer = Peer(
-                        id: '',
-                        username: '',
-                        hostname: '',
-                        alias: '',
-                        platform: '',
-                        tags: [],
-                        hash: '',
-                        password: '',
-                        forceAlwaysRelay: false,
-                        rdpPort: '',
-                        rdpUsername: '',
-                        loginName: '',
-                        device_group_name: '',
-                        note: '',
-                      );
-                      _autocompleteOpts = [emptyPeer];
                     } else {
                       String textWithoutSpaces =
                           textEditingValue.text.replaceAll(" ", "");
@@ -505,6 +486,7 @@ class _ConnectionPageState extends State<ConnectionPage>
                               borderRadius: BorderRadius.circular(5),
                               child: Material(
                                 elevation: 4,
+                                color: atlasCardColor(context),
                                 child: ConstrainedBox(
                                   constraints: BoxConstraints(
                                     maxHeight: maxHeight,
