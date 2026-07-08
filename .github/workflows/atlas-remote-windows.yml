@@ -133,6 +133,9 @@ jobs:
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "Stamping version: $VERSION (build ${GITHUB_RUN_NUMBER})"
           sed -i.bak -E 's/^version = "[^"]+"/version = "'"$VERSION"'"/' Cargo.toml && rm -f Cargo.toml.bak
+          # Cargo.lock pins the package's own version; keep it in sync or
+          # `cargo build --locked` fails ("lock file needs to be updated").
+          awk -v v="$VERSION" '/^name = "rustdesk"$/{print; getline; print "version = \"" v "\""; next} 1' Cargo.lock > Cargo.lock.tmp && mv Cargo.lock.tmp Cargo.lock
           sed -i.bak -E 's/^version: .*/version: '"$VERSION"'+'"${GITHUB_RUN_NUMBER}"'/' flutter/pubspec.yaml && rm -f flutter/pubspec.yaml.bak
           grep -m1 '^version = ' Cargo.toml
           grep -m1 '^version:' flutter/pubspec.yaml
