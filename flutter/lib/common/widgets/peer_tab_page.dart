@@ -167,10 +167,16 @@ class _PeerTabPageState extends State<PeerTabPage>
               key: ValueKey(t),
               index: counter,
               child: Obx(() {
+                // Read hover unconditionally: an Obx whose builder reads no Rx
+                // throws GetX's "improper use" error, which release builds
+                // paint as the grey RenderErrorBox — the selected tab's
+                // ternaries below otherwise short-circuit past every Rx read
+                // and kill the whole strip.
+                final hovered = hover.value;
                 final bg = selected ? cardWhite : Colors.transparent;
                 final fg = selected
                     ? inkActive
-                    : (hover.value ? inkHover : inkMuted);
+                    : (hovered ? inkHover : inkMuted);
                 return Tooltip(
                   preferBelow: false,
                   message: model.tabTooltip(t),
