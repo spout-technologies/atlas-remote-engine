@@ -158,7 +158,12 @@ class _PeerTabPageState extends State<PeerTabPage>
           final selected = model.currentTab == t;
           final hover = false.obs;
           counter += 1;
-          return ReorderableDragStartListener(
+          // Delayed (long-press) drag so a plain click reaches InkWell.onTap
+          // and selects the tab. Immediate ReorderableDragStartListener won the
+          // gesture arena on desktop — every click started a phantom reorder
+          // (tab lifted, gray drag placeholder, snapped back) and selection
+          // never fired. Long-press still reorders.
+          return ReorderableDelayedDragStartListener(
               key: ValueKey(t),
               index: counter,
               child: Obx(() {

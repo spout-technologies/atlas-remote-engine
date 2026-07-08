@@ -25,7 +25,10 @@ env:
   FLUTTER_VERSION: "3.24.5"
   VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
-  VERSION: "1.5.11"
+  # Fallback for workflow_dispatch; tag builds override this from the tag name
+  # (vX.Y.Z) in the Build step, which also patches Cargo.toml + pubspec so the
+  # in-app About version matches the release.
+  VERSION: "1.5.12"
 
 jobs:
   generate-bridge:
@@ -139,6 +142,18 @@ jobs:
       - name: Show versions
         run: rustup show && cargo -V && clang --version || true
 
+      - name: Dark-mode guardrail (no const light-surface tokens)
+        shell: bash
+        run: |
+          # A const token holding a white/sage-page surface can never flip in
+          # dark mode (the bug that made Settings a white-on-dark chimera). Use
+          # the atlas*Color(context) getters in common.dart instead.
+          if grep -rnE "const Color _k[A-Za-z]+ *= *Color\(0xFF(FFFFFF|F7F9F6)\)" flutter/lib/; then
+            echo "::error::Reintroduced a const light-surface token — use atlas*Color(context) getters."
+            exit 1
+          fi
+          echo "guardrail OK: no const light-surface tokens in flutter/lib"
+
       - name: Build Atlas Remote (min-macOS 12.3, ${{ matrix.job.arch }})
         run: |
           # Both arches ship --screencapturekit, whose framework floor is macOS 12.3,
@@ -148,6 +163,18 @@ jobs:
           sed -i -e "s/platform :osx, '.*'/platform :osx, '${MIN}'/" flutter/macos/Podfile
           sed -i -e "s/osx_minimum_system_version = \"[0-9]*.[0-9]*\"/osx_minimum_system_version = \"${MIN}\"/" Cargo.toml
           sed -i -e "s/MACOSX_DEPLOYMENT_TARGET = [0-9]*.[0-9]*;/MACOSX_DEPLOYMENT_TARGET = ${MIN};/" flutter/macos/Runner.xcodeproj/project.pbxproj
+          # Version: derive from the v* tag and stamp Cargo.toml + pubspec so the
+          # in-app About version, the .app bundle version, and the DMG filename
+          # all match the release. crate::VERSION regenerates from Cargo.toml.
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Stamping version: $VERSION (build ${GITHUB_RUN_NUMBER})"
+          sed -i -e "s/^version = \"[^\"]*\"/version = \"${VERSION}\"/" Cargo.toml
+          sed -i -e "s/^version: .*/version: ${VERSION}+${GITHUB_RUN_NUMBER}/" flutter/pubspec.yaml
+          grep -m1 '^version = ' Cargo.toml
+          grep -m1 '^version:' flutter/pubspec.yaml
           ./build.py --flutter --hwcodec --unix-file-copy-paste ${{ matrix.job.extra-build-args }}
 
       - name: Codesign (hardened runtime) + signed DMG

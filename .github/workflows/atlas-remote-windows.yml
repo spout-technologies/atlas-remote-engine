@@ -27,7 +27,10 @@ env:
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
   VCPKG_DEFAULT_TRIPLET: "x64-windows-static"
   VCPKG_DEFAULT_HOST_TRIPLET: "x64-windows-static"
-  VERSION: "1.5.11"
+  # Fallback for workflow_dispatch; tag builds override this from the tag name
+  # (win-vX.Y.Z) in the "Stamp version" step below, which also patches
+  # Cargo.toml + pubspec so the in-app About version matches the release.
+  VERSION: "1.5.12"
 
 jobs:
   generate-bridge:
@@ -112,30 +115,56 @@ jobs:
         shell: bash
         run: rustup show && cargo -V && clang --version && flutter --version || true
 
-      - name: Build Atlas Remote (flutter, x86_64, portable no-pack)
+      - name: Dark-mode guardrail (no const light-surface tokens)
         shell: bash
         run: |
-          python build.py --portable --skip-portable-pack --hwcodec --flutter
-
-      - name: Package portable zip
-        shell: bash
-        run: |
-          REL="flutter/build/windows/x64/runner/Release"
-          if [ ! -d "$REL" ]; then
-            echo "Release dir missing: $REL"; ls -R flutter/build/windows 2>/dev/null || true; exit 1
+          if grep -rnE "const Color _k[A-Za-z]+ *= *Color\(0xFF(FFFFFF|F7F9F6)\)" flutter/lib/; then
+            echo "::error::Reintroduced a const light-surface token — use atlas*Color(context) getters."
+            exit 1
           fi
-          ZIP="AtlasRemote-${VERSION}-x86_64-windows.zip"
-          powershell -Command "Compress-Archive -Path '${REL}/*' -DestinationPath '${ZIP}' -Force"
-          (sha256sum "$ZIP" || shasum -a 256 "$ZIP") > "$ZIP.sha256"
-          ls -la "$ZIP" "$ZIP.sha256"
+          echo "guardrail OK: no const light-surface tokens in flutter/lib"
 
-      - name: Upload portable zip (artifact)
+      - name: Stamp version from tag (Cargo + pubspec)
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF_NAME#win-v}"
+          fi
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Stamping version: $VERSION (build ${GITHUB_RUN_NUMBER})"
+          sed -i.bak -E 's/^version = "[^"]+"/version = "'"$VERSION"'"/' Cargo.toml && rm -f Cargo.toml.bak
+          sed -i.bak -E 's/^version: .*/version: '"$VERSION"'+'"${GITHUB_RUN_NUMBER}"'/' flutter/pubspec.yaml && rm -f flutter/pubspec.yaml.bak
+          grep -m1 '^version = ' Cargo.toml
+          grep -m1 '^version:' flutter/pubspec.yaml
+
+      - name: Build Atlas Remote installer (flutter, x86_64)
+        shell: bash
+        run: |
+          python build.py --portable --hwcodec --flutter
+
+      - name: Package installer (.exe)
+        shell: bash
+        run: |
+          # build.py's portable packer emits a self-installer exe at the repo
+          # root (AtlasRemote-<version>-install.exe). Rename to the canonical
+          # setup name. On first run it invokes the Atlas Remote install engine
+          # (installs to C:\Program Files\Atlas Remote + Start-menu shortcut).
+          SETUP="AtlasRemote-${VERSION}-x86_64-windows-setup.exe"
+          SRC="$(ls -1 AtlasRemote-*-install.exe rustdesk-*-install.exe 2>/dev/null | head -1)"
+          if [ -z "$SRC" ] || [ ! -f "$SRC" ]; then
+            echo "Installer exe not found at repo root:"; ls -la *.exe 2>/dev/null || true; exit 1
+          fi
+          mv "$SRC" "$SETUP"
+          (sha256sum "$SETUP" || shasum -a 256 "$SETUP") > "$SETUP.sha256"
+          ls -la "$SETUP" "$SETUP.sha256"
+
+      - name: Upload installer (artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: AtlasRemote-windows-x86_64
+          name: AtlasRemote-windows-x86_64-setup
           path: |
-            AtlasRemote-${{ env.VERSION }}-x86_64-windows.zip
-            AtlasRemote-${{ env.VERSION }}-x86_64-windows.zip.sha256
+            AtlasRemote-${{ env.VERSION }}-x86_64-windows-setup.exe
+            AtlasRemote-${{ env.VERSION }}-x86_64-windows-setup.exe.sha256
 
       - name: Publish to Release (on tag)
         if: startsWith(github.ref, 'refs/tags/')
@@ -143,5 +172,5 @@ jobs:
         with:
           prerelease: true
           files: |
-            AtlasRemote-${{ env.VERSION }}-x86_64-windows.zip
-            AtlasRemote-${{ env.VERSION }}-x86_64-windows.zip.sha256
+            AtlasRemote-${{ env.VERSION }}-x86_64-windows-setup.exe
+            AtlasRemote-${{ env.VERSION }}-x86_64-windows-setup.exe.sha256

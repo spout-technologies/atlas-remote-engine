@@ -46,20 +46,21 @@ const String _kSettingPageTabKeyTag = 'settingPageTabKey';
 // Surfaces, ink and radii sourced from _ds/tokens/colors.css. Applied to
 // the settings rail, cards and the Network "Managed by Atlas" panel so no
 // stock RustDesk blue/grey survives. MyTheme.accent is the Atlas green.
-const Color _kAtlasPage = Color(0xFFF7F9F6); // surface-50 (page)
-const Color _kAtlasCard = Color(0xFFFFFFFF); // card
-const Color _kAtlasBorder = Color(0xFFD1D6CD); // surface-300 (border)
-const Color _kAtlasInkHeading = Color(0xFF1C1917); // ink-900
-const Color _kAtlasInkBody = Color(0xFF44403C); // ink-700 (--text-body)
-const Color _kAtlasInkSecondary =
-    Color(0xFF444241); // ink-600 (--text-secondary / rail idle label)
-const Color _kAtlasInkLabel = Color(0xFF858585); // ink-500
-const Color _kAtlasIconIdle = Color(0xFFA8A8A2); // settings rail idle icon
-const Color _kAtlasAccentPale = Color(0xFFF4F8EC); // brand-50 (active pill)
-const Color _kAtlasAccentDark = Color(0xFF426516); // brand-700 (active text)
-const Color _kAtlasInfoBg = Color(0xFFEFF6FF); // info-50
-const Color _kAtlasInfoBorder = Color(0xFFBFDBFE); // info-200
-const Color _kAtlasInfoInk = Color(0xFF1D4ED8); // info-700
+// Theme-aware: each returns the exact original light hex in light mode
+// (light mode stays byte-identical) and a matched dark hex in dark mode.
+Color _kAtlasPage(BuildContext context) => isLightTheme(context) ? const Color(0xFFF7F9F6) : const Color(0xFF17181C); // surface-50 (page)
+Color _kAtlasCard(BuildContext context) => isLightTheme(context) ? const Color(0xFFFFFFFF) : const Color(0xFF23262B); // card
+Color _kAtlasBorder(BuildContext context) => isLightTheme(context) ? const Color(0xFFD1D6CD) : const Color(0xFF33373D); // surface-300 (border)
+Color _kAtlasInkHeading(BuildContext context) => isLightTheme(context) ? const Color(0xFF1C1917) : const Color(0xFFE6E8E3); // ink-900
+Color _kAtlasInkBody(BuildContext context) => isLightTheme(context) ? const Color(0xFF44403C) : const Color(0xFFB7BCB2); // ink-700 (--text-body)
+Color _kAtlasInkSecondary(BuildContext context) => isLightTheme(context) ? const Color(0xFF444241) : const Color(0xFFB7BCB2); // ink-600 (--text-secondary / rail idle label)
+Color _kAtlasInkLabel(BuildContext context) => isLightTheme(context) ? const Color(0xFF858585) : const Color(0xFF8C9187); // ink-500
+Color _kAtlasIconIdle(BuildContext context) => isLightTheme(context) ? const Color(0xFFA8A8A2) : const Color(0xFF8C9187); // settings rail idle icon
+Color _kAtlasAccentPale(BuildContext context) => isLightTheme(context) ? const Color(0xFFF4F8EC) : const Color(0x296EA924); // brand-50 (active pill)
+Color _kAtlasAccentDark(BuildContext context) => isLightTheme(context) ? const Color(0xFF426516) : const Color(0xFF9FD65A); // brand-700 (active text)
+Color _kAtlasInfoBg(BuildContext context) => isLightTheme(context) ? const Color(0xFFEFF6FF) : const Color(0xFF182231); // info-50
+Color _kAtlasInfoBorder(BuildContext context) => isLightTheme(context) ? const Color(0xFFBFDBFE) : const Color(0xFF2C3E5C); // info-200
+Color _kAtlasInfoInk(BuildContext context) => isLightTheme(context) ? const Color(0xFF1D4ED8) : const Color(0xFF93B4F5); // info-700
 const double _kAtlasCtrlRadius = 8.0; // radius-md: cards, inputs, tabs, panels
 
 class _TabInfo {
@@ -302,9 +303,10 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
         children: <Widget>[
           Container(
             width: _kTabWidth,
-            decoration: const BoxDecoration(
-              color: _kAtlasPage,
-              border: Border(right: BorderSide(color: _kAtlasBorder, width: 1)),
+            decoration: BoxDecoration(
+              color: _kAtlasPage(context),
+              border:
+                  Border(right: BorderSide(color: _kAtlasBorder(context), width: 1)),
             ),
             child: Column(
               children: [
@@ -332,9 +334,9 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
     final settingsText = Text(
       translate('Settings'),
       textAlign: TextAlign.left,
-      style: const TextStyle(
+      style: TextStyle(
         fontFamily: kAtlasDisplayFont,
-        color: _kAtlasInkHeading,
+        color: _kAtlasInkHeading(context),
         fontSize: _kTitleFontSize,
         fontWeight: FontWeight.w700,
         letterSpacing: -0.3,
@@ -388,7 +390,7 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
         height: _kTabHeight,
         margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 1),
         decoration: BoxDecoration(
-          color: selected ? _kAtlasAccentPale : Colors.transparent,
+          color: selected ? _kAtlasAccentPale(context) : Colors.transparent,
           borderRadius: BorderRadius.circular(_kAtlasCtrlRadius),
         ),
         child: Material(
@@ -408,14 +410,16 @@ class _DesktopSettingPageState extends State<DesktopSettingPage>
             child: Row(children: [
               Icon(
                 selected ? tab.selected : tab.unselected,
-                color: selected ? _accentColor : _kAtlasIconIdle,
+                color: selected ? _accentColor : _kAtlasIconIdle(context),
                 size: 15,
               ).marginOnly(left: 12, right: 10),
               Text(
                 translate(tab.label),
                 style: TextStyle(
                     fontFamily: kAtlasBodyFont,
-                    color: selected ? _kAtlasAccentDark : _kAtlasInkSecondary,
+                    color: selected
+                        ? _kAtlasAccentDark(context)
+                        : _kAtlasInkSecondary(context),
                     fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
                     fontSize: 13),
               ),
@@ -450,7 +454,7 @@ class _GeneralState extends State<_General> {
       children: [
         if (!isWeb) service(),
         theme(),
-        _Card(title: 'Language', children: [language()]),
+        _Card(context, title: 'Language', children: [language()]),
         if (!isWeb) hwcodec(),
         if (!isWeb) audio(context),
         if (!isWeb) record(context),
@@ -468,7 +472,7 @@ class _GeneralState extends State<_General> {
     }
 
     final isOptFixed = isOptionFixed(kCommConfKeyTheme);
-    return _Card(title: 'Theme', children: [
+    return _Card(context, title: 'Theme', children: [
       _Radio<String>(context,
           value: 'light',
           groupValue: current,
@@ -500,7 +504,7 @@ class _GeneralState extends State<_General> {
         return const Offstage();
       }
 
-      return _Card(title: 'Service', children: [
+      return _Card(context, title: 'Service', children: [
         _Button(serviceStop.value ? 'Start' : 'Stop', () {
           () async {
             serviceBtnEnabled.value = false;
@@ -680,7 +684,7 @@ class _GeneralState extends State<_General> {
         ).marginOnly(left: _kCheckBoxLeftMargin * 3),
       ));
     }
-    return _Card(title: 'Other', children: children);
+    return _Card(context, title: 'Other', children: children);
   }
 
   Widget wallpaper() {
@@ -727,7 +731,7 @@ class _GeneralState extends State<_General> {
     final vram = bind.mainHasVram();
     return Offstage(
       offstage: !(hwcodec || vram),
-      child: _Card(title: 'Hardware Codec', children: [
+      child: _Card(context, title: 'Hardware Codec', children: [
         _OptionCheckBox(
           context,
           'Enable hardware codec',
@@ -757,7 +761,7 @@ class _GeneralState extends State<_General> {
           setState(() {});
         },
       ).marginOnly(left: _kContentHMargin);
-      return _Card(title: 'Audio Input Device', children: [child]);
+      return _Card(context, title: 'Audio Input Device', children: [child]);
     }
 
     return AudioInput(builder: builder, isCm: false, isVoiceCall: false);
@@ -784,7 +788,7 @@ class _GeneralState extends State<_General> {
       String root_dir = map['root_dir']!;
       bool root_dir_exists = map['root_dir_exists']!;
       bool user_dir_exists = map['user_dir_exists']!;
-      return _Card(title: 'Recording', children: [
+      return _Card(context, title: 'Recording', children: [
         if (!bind.isOutgoingOnly())
           _OptionCheckBox(context, 'Automatically record incoming sessions',
               kOptionAllowAutoRecordIncoming),
@@ -928,9 +932,9 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
               child: Column(children: [
                 permissions(context),
                 password(context),
-                _Card(title: '2FA', children: [tfa()]),
+                _Card(context, title: '2FA', children: [tfa()]),
                 if (!isChangeIdDisabled())
-                  _Card(title: 'ID', children: [changeId()]),
+                  _Card(context, title: 'ID', children: [changeId()]),
                 more(context),
               ]),
             ),
@@ -1096,7 +1100,7 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
           break;
       }
 
-      return _Card(title: 'Permissions', children: [
+      return _Card(context, title: 'Permissions', children: [
         ComboBox(
             keys: [
               defaultOptionAccessMode,
@@ -1288,7 +1292,7 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
           final usePassword = model.approveMode != 'click';
 
           final isApproveModeFixed = isOptionFixed(kOptionApproveMode);
-          return _Card(title: 'Password', children: [
+          return _Card(context, title: 'Password', children: [
             ComboBox(
               enabled: !locked && !isApproveModeFixed,
               keys: modeKeys,
@@ -1321,7 +1325,7 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
 
   Widget more(BuildContext context) {
     bool enabled = !locked;
-    return _Card(title: 'Security', children: [
+    return _Card(context, title: 'Security', children: [
       shareRdp(context, enabled),
       _OptionCheckBox(context, 'Deny LAN discovery', 'enable-lan-discovery',
           reverse: true, enabled: enabled),
@@ -1670,24 +1674,24 @@ class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
               margin: const EdgeInsets.only(left: _kCardLeftMargin, top: 15),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
-                color: _kAtlasInfoBg,
-                border: Border.all(color: _kAtlasInfoBorder, width: 1),
+                color: _kAtlasInfoBg(context),
+                border: Border.all(color: _kAtlasInfoBorder(context), width: 1),
                 borderRadius: BorderRadius.circular(_kAtlasCtrlRadius),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.info_outline,
-                          size: 15, color: _kAtlasInfoInk)
+                  Icon(Icons.info_outline,
+                          size: 15, color: _kAtlasInfoInk(context))
                       .marginOnly(top: 1, right: 8),
                   Expanded(
                     child: Text(
                       translate(
                           'Managed by Atlas — network settings are centrally configured for your organisation. Contact your administrator to change them.'),
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: kAtlasBodyFont,
                         fontSize: 12.5,
-                        color: _kAtlasInfoInk,
+                        color: _kAtlasInfoInk(context),
                         height: 1.5,
                       ),
                     ),
@@ -1791,6 +1795,7 @@ class _NetworkState extends State<_Network> with AutomaticKeepAliveClientMixin {
 
     final divider = const Divider(height: 1, indent: 16, endIndent: 16);
     return _Card(
+      context,
       title: 'Network',
       subtitle: 'Relay, direct access, and proxy configuration.',
       children: [
@@ -1900,7 +1905,7 @@ class _DisplayState extends State<_Display> {
     }
 
     final groupValue = bind.mainGetUserDefaultOption(key: kOptionViewStyle);
-    return _Card(title: 'Default View Style', children: [
+    return _Card(context, title: 'Default View Style', children: [
       _Radio(context,
           value: kRemoteViewStyleOriginal,
           groupValue: groupValue,
@@ -1930,7 +1935,7 @@ class _DisplayState extends State<_Display> {
       setState(() {});
     }
 
-    return _Card(title: 'Default Scroll Style', children: [
+    return _Card(context, title: 'Default Scroll Style', children: [
       _Radio(context,
           value: kRemoteScrollStyleAuto,
           groupValue: groupValue,
@@ -1970,7 +1975,7 @@ class _DisplayState extends State<_Display> {
 
     final isOptFixed = isOptionFixed(kOptionImageQuality);
     final groupValue = bind.mainGetUserDefaultOption(key: kOptionImageQuality);
-    return _Card(title: 'Default Image Quality', children: [
+    return _Card(context, title: 'Default Image Quality', children: [
       _Radio(context,
           value: kRemoteImageQualityBest,
           groupValue: groupValue,
@@ -2010,7 +2015,7 @@ class _DisplayState extends State<_Display> {
       // But it may also be ok to take effect in the next connection.
     }
 
-    return _Card(title: 'Default trackpad speed', children: [
+    return _Card(context, title: 'Default trackpad speed', children: [
       TrackpadSpeedWidget(
         value: curSpeed,
         onDebouncer: onDebouncer,
@@ -2050,7 +2055,7 @@ class _DisplayState extends State<_Display> {
     } catch (e) {
       debugPrint("failed to parse supported hwdecodings, err=$e");
     }
-    return _Card(title: 'Default Codec', children: [
+    return _Card(context, title: 'Default Codec', children: [
       _Radio(context,
           value: 'auto',
           groupValue: groupValue,
@@ -2099,6 +2104,7 @@ class _DisplayState extends State<_Display> {
       groupValue = bind.mainDefaultPrivacyModeImpl();
     }
     return _Card(
+      context,
       title: 'Privacy mode',
       children: privacyModeImpls.map((impl) {
         final d = impl as List<dynamic>;
@@ -2141,7 +2147,7 @@ class _DisplayState extends State<_Display> {
   Widget other(BuildContext context) {
     final children =
         otherDefaultSettings().map((e) => otherRow(e.$1, e.$2)).toList();
-    return _Card(title: 'Other Default Options', children: children);
+    return _Card(context, title: 'Other Default Options', children: children);
   }
 }
 
@@ -2160,6 +2166,7 @@ class _AccountState extends State<_Account> {
       controller: scrollController,
       children: [
         _Card(
+            context,
             title: 'Account',
             subtitle:
                 "Your Atlas identity connects this device to your practice's fleet.",
@@ -2435,7 +2442,7 @@ class __PrinterState extends State<_Printer> {
         if (installed && isPrinterInstalled) tipReady()
       ]);
     }
-    return _Card(title: 'Outgoing Print Jobs', children: children);
+    return _Card(context, title: 'Outgoing Print Jobs', children: children);
   }
 
   Widget incoming(BuildContext context) {
@@ -2446,7 +2453,7 @@ class __PrinterState extends State<_Printer> {
     }
 
     PrinterOptions printerOptions = PrinterOptions.load();
-    return _Card(title: 'Incoming Print Jobs', children: [
+    return _Card(context, title: 'Incoming Print Jobs', children: [
       _Radio(context,
           value: kValuePrinterIncomingJobDismiss,
           groupValue: printerOptions.action,
@@ -2556,12 +2563,12 @@ class _AboutState extends State<_About> {
               ),
               Text(
                 'Atlas Remote',
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: kAtlasDisplayFont,
                   fontSize: 19,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -0.3,
-                  color: _kAtlasInkHeading,
+                  color: _kAtlasInkHeading(context),
                 ),
               ),
             ],
@@ -2571,10 +2578,10 @@ class _AboutState extends State<_About> {
             child: Text(
               '${translate('Version')} $version · $buildDate',
               textAlign: TextAlign.center,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: kAtlasMonoFont,
                 fontSize: 12,
-                color: _kAtlasInkLabel,
+                color: _kAtlasInkLabel(context),
               ),
             ),
           ),
@@ -2583,15 +2590,15 @@ class _AboutState extends State<_About> {
               child: Text(
                 '${translate('Fingerprint')}: $fingerprint',
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: kAtlasMonoFont,
                   fontSize: 11,
-                  color: _kAtlasInkLabel,
+                  color: _kAtlasInkLabel(context),
                 ),
               ).marginOnly(top: 4),
             ),
           const SizedBox(height: 22),
-          const Divider(height: 1, color: _kAtlasBorder),
+          Divider(height: 1, color: _kAtlasBorder(context)),
           const SizedBox(height: 22),
           Wrap(
             alignment: WrapAlignment.center,
@@ -2617,8 +2624,8 @@ class _AboutState extends State<_About> {
         margin: const EdgeInsets.only(top: 20),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: _kAtlasPage,
-          border: Border.all(color: _kAtlasBorder, width: 1),
+          color: _kAtlasPage(context),
+          border: Border.all(color: _kAtlasBorder(context), width: 1),
           borderRadius: BorderRadius.circular(_kAtlasCtrlRadius),
         ),
         child: SelectionArea(
@@ -2629,21 +2636,21 @@ class _AboutState extends State<_About> {
                 'Atlas Remote is a product of Spout Technologies (Pty) Ltd, '
                 'built on the open-source RustDesk remote-desktop project '
                 '(© Purslane Ltd, AGPL-3.0).',
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: kAtlasBodyFont,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: _kAtlasInkHeading,
+                  color: _kAtlasInkHeading(context),
                   height: 1.6,
                 ),
               ),
               const SizedBox(height: 8),
               Text(
                 'Copyright © ${DateTime.now().toString().substring(0, 4)} Purslane Ltd.\n$license',
-                style: const TextStyle(
+                style: TextStyle(
                   fontFamily: kAtlasBodyFont,
                   fontSize: 12,
-                  color: _kAtlasInkSecondary,
+                  color: _kAtlasInkSecondary(context),
                   height: 1.6,
                 ),
               ),
@@ -2661,7 +2668,7 @@ class _AboutState extends State<_About> {
 
       return SingleChildScrollView(
         controller: scrollController,
-        child: _Card(title: translate('About Atlas Remote'), children: [
+        child: _Card(context, title: translate('About Atlas Remote'), children: [
           Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -2670,10 +2677,10 @@ class _AboutState extends State<_About> {
               Text(
                 '© ${DateTime.now().toString().substring(0, 4)} Spout Technologies (Pty) Ltd. All rights reserved.',
                 textAlign: TextAlign.center,
-                style: const TextStyle(
+                style: TextStyle(
                     fontFamily: kAtlasBodyFont,
                     fontSize: 11,
-                    color: _kAtlasInkLabel),
+                    color: _kAtlasInkLabel(context)),
               ).marginOnly(top: 16),
             ],
           ).marginOnly(left: _kContentHMargin)
@@ -2688,7 +2695,7 @@ class _AboutState extends State<_About> {
 //#region components
 
 // ignore: non_constant_identifier_names
-Widget _Card(
+Widget _Card(BuildContext context,
     {required String title,
     required List<Widget> children,
     List<Widget>? title_suffix,
@@ -2702,11 +2709,11 @@ Widget _Card(
         child: SizedBox(
           width: _kCardFixedWidth,
           child: Card(
-            color: _kAtlasCard,
+            color: _kAtlasCard(context),
             elevation: 0,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(_kAtlasCtrlRadius),
-              side: const BorderSide(color: _kAtlasBorder, width: 1),
+              side: BorderSide(color: _kAtlasBorder(context), width: 1),
             ),
             child: Column(
               children: [
@@ -2719,11 +2726,11 @@ Widget _Card(
                             child: Text(
                           translate(title),
                           textAlign: TextAlign.start,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontFamily: kAtlasDisplayFont,
                             fontSize: 17,
                             fontWeight: FontWeight.w600,
-                            color: _kAtlasInkHeading,
+                            color: _kAtlasInkHeading(context),
                           ),
                         )),
                         ...?title_suffix
@@ -2732,10 +2739,10 @@ Widget _Card(
                     if (subtitle != null)
                       Text(
                         translate(subtitle),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: kAtlasBodyFont,
                           fontSize: 12.5,
-                          color: _kAtlasInkLabel,
+                          color: _kAtlasInkLabel(context),
                           height: 1.5,
                         ),
                       ).marginOnly(top: 3),
@@ -2928,7 +2935,7 @@ class _WaylandCardState extends State<WaylandCard> {
         ];
         return Offstage(
           offstage: children.isEmpty,
-          child: _Card(title: 'Wayland', children: children),
+          child: _Card(context, title: 'Wayland', children: children),
         );
       },
     );
