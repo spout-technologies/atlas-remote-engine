@@ -157,6 +157,12 @@ const String kOptionPeerTabIndex = "peer-tab-index";
 const String kOptionPeerTabOrder = "peer-tab-order";
 const String kOptionPeerTabVisible = "peer-tab-visible";
 const String kOptionPeerCardUiType = "peer-card-ui-type";
+// Which credential the Home PASSWORD card displays. Pure view state (local
+// Flutter option) — must never be written to the server option
+// verification-method, which is the machine's auth policy.
+const String kOptionHomePasswordView = "home-password-view";
+const String kHomePasswordViewOneTime = "onetime";
+const String kHomePasswordViewPermanent = "permanent";
 const String kOptionCurrentAbName = "current-ab-name";
 const String kOptionEnableConfirmClosingTabs = "enable-confirm-closing-tabs";
 const String kOptionAllowAlwaysSoftwareRender = "allow-always-software-render";

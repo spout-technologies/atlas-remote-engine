@@ -645,19 +645,47 @@ pub fn set_permanent_password_with_result(password: String) -> bool {
     if config::Config::is_disable_change_permanent_password() {
         return false;
     }
+    let setting_non_empty = !password.is_empty();
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {
-        return config::Config::set_permanent_password(&password);
+        let ok = config::Config::set_permanent_password(&password);
+        if ok && setting_non_empty {
+            ensure_permanent_password_usable_after_set();
+        }
+        return ok;
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
         match crate::ipc::set_permanent_password_with_ack(password) {
-            Ok(ok) => ok,
+            Ok(ok) => {
+                if ok && setting_non_empty {
+                    ensure_permanent_password_usable_after_set();
+                }
+                ok
+            }
             Err(err) => {
                 log::warn!("Failed to set permanent password via IPC: {err}");
                 false
             }
         }
+    }
+}
+
+/// Setting a non-empty permanent password while the verification method is
+/// one-time-only is contradictory: the freshly stored password could never
+/// authenticate, so every attempt would fail as "wrong password". Restore the
+/// default method (both passwords accepted) so a stored permanent password is
+/// always usable.
+fn ensure_permanent_password_usable_after_set() {
+    if get_option(OPTION_VERIFICATION_METHOD) == "use-temporary-password" {
+        log::info!(
+            "Permanent password set while verification method was one-time-only; \
+             restoring use-both-passwords so the new password can authenticate"
+        );
+        set_option(
+            OPTION_VERIFICATION_METHOD.to_owned(),
+            "use-both-passwords".to_owned(),
+        );
     }
 }
 

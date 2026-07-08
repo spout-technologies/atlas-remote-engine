@@ -38,6 +38,13 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     with AutomaticKeepAliveClientMixin, WidgetsBindingObserver {
   final _leftPaneScrollController = ScrollController();
 
+  // Which credential the PASSWORD card shows (one-time vs permanent). Pure
+  // view state persisted as a LOCAL option; it must never write the server
+  // option verification-method (the auth policy) — doing so from this pill
+  // silently disabled permanent-password auth on the machine (v1.5.13 fix).
+  String _passwordView =
+      bind.getLocalFlutterOption(k: kOptionHomePasswordView);
+
   @override
   bool get wantKeepAlive => true;
   var systemError = '';
@@ -460,11 +467,14 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   // Atlas: "PASSWORD" card. Preserves the real incoming-control password
   // surface (serverPasswd, refresh temporary password, change permanent
   // password) but reframes it as a card with a segmented One-time / Permanent
-  // toggle bound to the verification method, and the password shown in mono
-  // with copy + refresh actions on the right.
+  // toggle. The toggle is a pure VIEW switch (local option); the auth policy
+  // (verification-method) is only changed from Settings → Security.
   buildPasswordBoard2(BuildContext context, ServerModel model) {
-    final showOneTime = model.approveMode != 'click' &&
+    // A one-time password only exists when the policy enables it.
+    final canShowOneTime = model.approveMode != 'click' &&
         model.verificationMethod != kUsePermanentPassword;
+    final showOneTime =
+        canShowOneTime && _passwordView != kHomePasswordViewPermanent;
     return _buildCard(
       context,
       child: Column(
@@ -484,7 +494,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
                   color: atlasInkMuted(context),
                 ),
               ),
-              if (!bind.isDisableSettings()) _buildPasswordModeToggle(context, model),
+              if (!bind.isDisableSettings())
+                _buildPasswordModeToggle(context, showOneTime, canShowOneTime),
             ],
           ),
           const SizedBox(height: 8),
@@ -492,32 +503,46 @@ class _DesktopHomePageState extends State<DesktopHomePage>
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(
-                child: GestureDetector(
-                  onDoubleTap: () {
-                    if (showOneTime) {
-                      Clipboard.setData(
-                          ClipboardData(text: model.serverPasswd.text));
-                      showToast(translate("Copied"));
-                    }
-                  },
-                  child: TextFormField(
-                    controller: model.serverPasswd,
-                    readOnly: true,
-                    decoration: const InputDecoration(
-                      filled: false,
-                      isCollapsed: true,
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(vertical: 6),
-                    ),
-                    style: TextStyle(
-                      fontFamily: kAtlasMonoFont,
-                      fontSize: 19,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.14, // 0.06em at 19px
-                      color: atlasInkPrimary(context),
-                    ),
-                  ).workaroundFreezeLinuxMint(),
-                ),
+                child: showOneTime
+                    ? GestureDetector(
+                        onDoubleTap: () {
+                          Clipboard.setData(
+                              ClipboardData(text: model.serverPasswd.text));
+                          showToast(translate("Copied"));
+                        },
+                        child: TextFormField(
+                          controller: model.serverPasswd,
+                          readOnly: true,
+                          decoration: const InputDecoration(
+                            filled: false,
+                            isCollapsed: true,
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(vertical: 6),
+                          ),
+                          style: TextStyle(
+                            fontFamily: kAtlasMonoFont,
+                            fontSize: 19,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.14, // 0.06em at 19px
+                            color: atlasInkPrimary(context),
+                          ),
+                        ).workaroundFreezeLinuxMint(),
+                      )
+                    // Permanent view: the permanent password is never
+                    // displayed — a masked placeholder, edited via Settings.
+                    : Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        child: Text(
+                          '••••••••',
+                          style: TextStyle(
+                            fontFamily: kAtlasMonoFont,
+                            fontSize: 19,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.14,
+                            color: atlasInkPrimary(context),
+                          ),
+                        ),
+                      ),
               ),
               _buildIconButton(
                 context,
@@ -568,9 +593,12 @@ class _DesktopHomePageState extends State<DesktopHomePage>
 
   // Segmented One-time / Permanent pill. Sage track; the active segment is a
   // white rounded chip with ink text, the inactive segment is ink-500.
-  // Bound to the verification method (kUseTemporaryPassword / kUsePermanentPassword).
-  Widget _buildPasswordModeToggle(BuildContext context, ServerModel model) {
-    final isPermanent = model.verificationMethod == kUsePermanentPassword;
+  // Pure VIEW toggle: switches which credential the card shows, persisted as
+  // a local option. It must NOT write verification-method (the auth policy) —
+  // that lives in Settings → Security. When the policy has disabled one-time
+  // passwords entirely, the One-time segment routes there instead.
+  Widget _buildPasswordModeToggle(
+      BuildContext context, bool showOneTime, bool canShowOneTime) {
 
     Widget seg(String label, bool active, VoidCallback onTap) {
       return InkWell(
@@ -616,11 +644,25 @@ class _DesktopHomePageState extends State<DesktopHomePage>
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          seg(translate("One-time"), !isPermanent, () async {
-            await model.setVerificationMethod(kUseTemporaryPassword);
+          seg(translate("One-time"), showOneTime, () {
+            if (!canShowOneTime) {
+              // Policy has one-time passwords off; take the user to where
+              // the policy is actually changed rather than changing it here.
+              DesktopSettingPage.switch2page(SettingsTabKey.safety);
+              return;
+            }
+            setState(() {
+              _passwordView = kHomePasswordViewOneTime;
+            });
+            bind.setLocalFlutterOption(
+                k: kOptionHomePasswordView, v: kHomePasswordViewOneTime);
           }),
-          seg(translate("Permanent"), isPermanent, () async {
-            await model.setVerificationMethod(kUsePermanentPassword);
+          seg(translate("Permanent"), !showOneTime, () {
+            setState(() {
+              _passwordView = kHomePasswordViewPermanent;
+            });
+            bind.setLocalFlutterOption(
+                k: kOptionHomePasswordView, v: kHomePasswordViewPermanent);
           }),
         ],
       ),
