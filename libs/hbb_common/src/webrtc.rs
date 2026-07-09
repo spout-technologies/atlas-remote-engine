@@ -567,29 +567,32 @@ mod tests {
             None
         );
 
-        config::Config::set_option("ice-servers".to_string(), "".to_string());
-        assert_eq!(
-            WebRTCStream::get_ice_servers()[0].urls[0],
-            DEFAULT_ICE_SERVERS[0].to_string()
-        );
+        // Sandboxed via with_options_store_env: from here on this test writes
+        // real global config through Config::set_option, so it must never run
+        // against the real Atlas Remote config (same hazard class as the
+        // test_check_ws relay/rendezvous corruption incident, 2026-07-09).
+        crate::config::tests::with_options_store_env("webrtc_ice", || {
+            config::Config::set_option("ice-servers".to_string(), "".to_string());
+            assert_eq!(
+                WebRTCStream::get_ice_servers()[0].urls[0],
+                DEFAULT_ICE_SERVERS[0].to_string()
+            );
 
-        config::Config::set_option(
-            "ice-servers".to_string(),
-            ",stun://example.com,turn://example.com,sdf".to_string(),
-        );
-        assert_eq!(
-            WebRTCStream::get_ice_servers()[0].urls[0],
-            "stun:example.com:3478"
-        );
-        assert_eq!(
-            WebRTCStream::get_ice_servers()[1].urls[0],
-            "turn:example.com:3478"
-        );
-        assert_eq!(WebRTCStream::get_ice_servers().len(), 2);
-        config::Config::set_option(
-            "ice-servers".to_string(),
-            "".to_string(),
-        );
+            config::Config::set_option(
+                "ice-servers".to_string(),
+                ",stun://example.com,turn://example.com,sdf".to_string(),
+            );
+            assert_eq!(
+                WebRTCStream::get_ice_servers()[0].urls[0],
+                "stun:example.com:3478"
+            );
+            assert_eq!(
+                WebRTCStream::get_ice_servers()[1].urls[0],
+                "turn:example.com:3478"
+            );
+            assert_eq!(WebRTCStream::get_ice_servers().len(), 2);
+            config::Config::set_option("ice-servers".to_string(), "".to_string());
+        });
     }
 
     #[test]
