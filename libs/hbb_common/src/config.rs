@@ -536,8 +536,21 @@ impl Config2 {
         return CONFIG2.read().unwrap().clone();
     }
 
-    pub fn set(cfg: Config2) -> bool {
+    pub fn set(mut cfg: Config2) -> bool {
         let mut lock = CONFIG2.write().unwrap();
+        // Whole-struct syncs (root service ⇄ user process) may carry an older
+        // options lineage — e.g. a freshly seeded root copy around a restart.
+        // Keep the higher-serial options map so a stale copy can never silently
+        // erase established options; the rest of the struct syncs as before.
+        let incoming_serial = options_write_serial_of(&cfg.options);
+        let current_serial = options_write_serial_of(&lock.options);
+        if incoming_serial < current_serial {
+            log::warn!(
+                "Config2 sync carried a stale options write serial ({incoming_serial} < \
+                 {current_serial}); keeping the current options map"
+            );
+            cfg.options = lock.options.clone();
+        }
         if *lock == cfg {
             return false;
         }
@@ -565,6 +578,38 @@ pub fn load_path<T: serde::Serialize + serde::de::DeserializeOwned + Default + s
                 if err.kind() == std::io::ErrorKind::NotFound {
                     return T::default();
                 }
+            }
+            if matches!(&err, confy::ConfyError::BadTomlData(_)) {
+                // Definite corruption. Quarantine the unreadable file so the next
+                // store cannot silently cement the defaulted state over it, and
+                // keep the bytes on disk for recovery.
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let mut quarantine = file.clone();
+                quarantine.set_file_name(format!(
+                    "{}.corrupt-{}",
+                    file.file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                        .unwrap_or_default(),
+                    ts
+                ));
+                match fs::rename(&file, &quarantine) {
+                    Ok(()) => log::error!(
+                        "Failed to parse config '{}': {}; quarantined the corrupt file at '{}'",
+                        file.display(),
+                        err,
+                        quarantine.display()
+                    ),
+                    Err(e) => log::error!(
+                        "Failed to parse config '{}': {} (quarantine rename also failed: {})",
+                        file.display(),
+                        err,
+                        e
+                    ),
+                }
+                return T::default();
             }
             log::error!("Failed to load config '{}': {}", file.display(), err);
             T::default()
@@ -1234,7 +1279,48 @@ impl Config {
 
     pub fn set_options(mut v: HashMap<String, String>) {
         Self::purify_options(&mut v);
+        let incoming_serial = options_write_serial_of(&v);
         let mut config = CONFIG2.write().unwrap();
+        let current_serial = options_write_serial_of(&config.options);
+        // A whole-map replacement carrying an older write serial was built from
+        // a stale or freshly-defaulted snapshot; accepting it would silently
+        // erase every key written since that snapshot was taken.
+        if incoming_serial < current_serial {
+            log::warn!(
+                "Rejected whole-map options replace with stale write serial {incoming_serial} \
+                 (current {current_serial}); keeping the established map"
+            );
+            return;
+        }
+        if options_equal_ignoring_write_serial(&config.options, &v) {
+            return;
+        }
+        v.insert(
+            OPTIONS_WRITE_SERIAL_KEY.to_owned(),
+            incoming_serial
+                .max(current_serial)
+                .saturating_add(1)
+                .to_string(),
+        );
+        config.options = v;
+        config.store();
+    }
+
+    /// Faithfully mirrors the daemon's authoritative options map into this
+    /// process's read cache, adopting the daemon's write serial as-is.
+    ///
+    /// Unlike [`Config::set_options`], this neither bumps the serial nor treats
+    /// the incoming map as an authoritative push — it is a pull-side cache
+    /// update. It refuses to regress below a higher local serial (e.g. a
+    /// local-only write made while the daemon was briefly unreachable), so a
+    /// lagging daemon snapshot can't erase a fresher local view.
+    pub fn cache_options(mut v: HashMap<String, String>) {
+        Self::purify_options(&mut v);
+        let incoming_serial = options_write_serial_of(&v);
+        let mut config = CONFIG2.write().unwrap();
+        if incoming_serial < options_write_serial_of(&config.options) {
+            return;
+        }
         if config.options == v {
             return;
         }
@@ -1257,9 +1343,14 @@ impl Config {
     }
 
     pub fn set_option(k: String, v: String) {
+        // The write serial is maintained internally; it can never be set directly.
+        if k == OPTIONS_WRITE_SERIAL_KEY {
+            return;
+        }
         if !is_option_can_save(&OVERWRITE_SETTINGS, &k, &DEFAULT_SETTINGS, &v) {
             let mut config = CONFIG2.write().unwrap();
             if config.options.remove(&k).is_some() {
+                bump_options_write_serial(&mut config.options);
                 config.store();
             }
             return;
@@ -1272,8 +1363,63 @@ impl Config {
             } else {
                 config.options.insert(k, v);
             }
+            bump_options_write_serial(&mut config.options);
             config.store();
         }
+    }
+
+    pub fn get_options_write_serial() -> u64 {
+        options_write_serial_of(&CONFIG2.read().unwrap().options)
+    }
+
+    /// Applies a per-key options delta (`None` or an empty value removes the
+    /// key) as one atomic batch: at most one store and one serial bump.
+    ///
+    /// Before applying, any newer options lineage already on disk — written by
+    /// another process while this one held a stale in-memory view, e.g. a UI
+    /// falling back to a local write around a daemon restart — is adopted, so
+    /// the delta merges on top of the freshest state instead of clobbering it.
+    /// The whole read-modify-store sequence is serialised across processes via
+    /// an advisory file lock. Returns whether anything changed.
+    pub fn apply_options_delta(delta: &[(String, Option<String>)]) -> bool {
+        let file = Self::file_("2");
+        let _flock = OptionsFileLock::acquire(&file);
+        let mut config = CONFIG2.write().unwrap();
+        if file.exists() {
+            let on_disk: Config2 = load_path(file);
+            if options_write_serial_of(&on_disk.options) > options_write_serial_of(&config.options)
+            {
+                config.options = on_disk.options;
+            }
+        }
+        let mut changed = false;
+        for (k, v) in delta {
+            // The write serial is maintained internally; a delta can never set it.
+            if k == OPTIONS_WRITE_SERIAL_KEY {
+                continue;
+            }
+            // Tri-state, matching `set_option`/`set_options`: `None` removes the
+            // key; `Some(val)` sets it verbatim (an empty string is a legitimate
+            // override of a non-empty build default) unless `is_option_can_save`
+            // says it collapses to the default / is force-overwritten, in which
+            // case the stored key is removed so the default shows through.
+            match v {
+                Some(val) if is_option_can_save(&OVERWRITE_SETTINGS, k, &DEFAULT_SETTINGS, val) => {
+                    if config.options.get(k) != Some(val) {
+                        config.options.insert(k.clone(), val.clone());
+                        changed = true;
+                    }
+                }
+                _ => {
+                    changed |= config.options.remove(k).is_some();
+                }
+            }
+        }
+        if changed {
+            bump_options_write_serial(&mut config.options);
+            config.store();
+        }
+        changed
     }
 
     pub fn update_id() {
@@ -2756,6 +2902,91 @@ fn get_or(
         .cloned()
 }
 
+/// Reserved key inside the `[options]` map carrying a monotonic write serial.
+///
+/// Every mutation of the options map bumps this counter. Whole-map replacements
+/// (`Config::set_options`, `Config2::set`) are rejected when they carry an older
+/// serial than the current map, so a writer holding a stale or freshly-defaulted
+/// snapshot can no longer silently erase keys it never touched. The key rides
+/// inside the map itself, so it survives round-trips through the unchanged
+/// upstream `Data::Options` IPC protocol and through older binaries, which treat
+/// it as an opaque option.
+pub const OPTIONS_WRITE_SERIAL_KEY: &str = "atlas-options-write-serial";
+
+#[inline]
+fn options_write_serial_of(options: &HashMap<String, String>) -> u64 {
+    options
+        .get(OPTIONS_WRITE_SERIAL_KEY)
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0)
+}
+
+#[inline]
+fn bump_options_write_serial(options: &mut HashMap<String, String>) {
+    let next = options_write_serial_of(options).saturating_add(1);
+    options.insert(OPTIONS_WRITE_SERIAL_KEY.to_owned(), next.to_string());
+}
+
+fn options_equal_ignoring_write_serial(
+    a: &HashMap<String, String>,
+    b: &HashMap<String, String>,
+) -> bool {
+    let mut a = a.clone();
+    let mut b = b.clone();
+    a.remove(OPTIONS_WRITE_SERIAL_KEY);
+    b.remove(OPTIONS_WRITE_SERIAL_KEY);
+    a == b
+}
+
+/// Advisory cross-process lock serialising read-modify-store sequences on the
+/// options config file. On Unix (macOS is the platform where the UI and the
+/// server daemon share one file) this holds `flock(LOCK_EX)` on a `.lock`
+/// sibling for the duration of the guard; elsewhere it is a no-op, as the
+/// service and user profiles use separate config homes there.
+struct OptionsFileLock {
+    #[cfg(unix)]
+    file: Option<fs::File>,
+}
+
+impl OptionsFileLock {
+    #[cfg(unix)]
+    fn acquire(path: &Path) -> Self {
+        let lock_path = path.with_extension("lock");
+        if let Some(parent) = lock_path.parent() {
+            fs::create_dir_all(parent).ok();
+        }
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .open(&lock_path)
+            .ok();
+        if let Some(f) = &file {
+            use std::os::unix::io::AsRawFd;
+            unsafe {
+                libc::flock(f.as_raw_fd(), libc::LOCK_EX);
+            }
+        }
+        Self { file }
+    }
+
+    #[cfg(not(unix))]
+    fn acquire(_path: &Path) -> Self {
+        Self {}
+    }
+}
+
+#[cfg(unix)]
+impl Drop for OptionsFileLock {
+    fn drop(&mut self) {
+        if let Some(f) = &self.file {
+            use std::os::unix::io::AsRawFd;
+            unsafe {
+                libc::flock(f.as_raw_fd(), libc::LOCK_UN);
+            }
+        }
+    }
+}
+
 #[inline]
 fn is_option_can_save(
     overwrite: &RwLock<HashMap<String, String>>,
@@ -3336,7 +3567,12 @@ mod tests {
         hard_settings: HashMap<String, String>,
         test: impl FnOnce() -> R,
     ) -> R {
-        let _guard = CONFIG_STATE_TEST_LOCK.lock().unwrap();
+        // Tolerate poisoning so one failing test can't cascade PoisonError into
+        // every other test sharing this isolation mutex; each test fully
+        // reinitializes the guarded globals, so recovering the lock is safe.
+        let _guard = CONFIG_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let _state_guard = ConfigStateTestGuard::new(config, hard_settings);
         test()
     }
@@ -3972,6 +4208,12 @@ mod tests {
 
     #[test]
     fn test_store_load() {
+        // Serialise against tests that mutate the global APP_NAME (which drives
+        // every config path); otherwise the metadata read below can race a
+        // path swap. Tolerate poisoning so a sibling panic doesn't cascade.
+        let _guard = CONFIG_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let peerconfig_id = "123456789";
         let cfg: PeerConfig = Default::default();
         cfg.store(&peerconfig_id);
@@ -3995,6 +4237,10 @@ mod tests {
     #[test]
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     fn test_uinput_ipc_path_is_shared_across_uids() {
+        // Reads the global APP_NAME twice; serialise against tests that mutate it.
+        let _guard = CONFIG_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         const ROOT_UID: u32 = 0;
         const USER_UID: u32 = 1000;
 
@@ -4012,5 +4258,467 @@ mod tests {
         let non_service_root = Config::ipc_path_for_uid(ROOT_UID, "");
         let non_service_user = Config::ipc_path_for_uid(USER_UID, "");
         assert_ne!(non_service_root, non_service_user);
+    }
+
+    // ---- Options store merge safety (per-key deltas + write-serial arbitration) ----
+    //
+    // Regression coverage for the v1.5.13 first-launch incident (2026-07-08 23:30):
+    // whole-map read-modify-write over IPC raced a daemon restart and silently
+    // dropped `stop-service`, `local-ip-addr` and `verification-method` from
+    // `[options]`. The options map now carries `atlas-options-write-serial`;
+    // whole-map replacements from a stale or freshly-defaulted snapshot are
+    // rejected, and cooperating writers apply per-key deltas instead.
+
+    /// Redirects `APP_NAME` (and therefore every config path) into a throwaway
+    /// per-test namespace, and snapshots the in-memory statics the options store
+    /// reads, so these tests can never touch the real Atlas Remote config.
+    struct OptionsStoreTestEnv {
+        original_app_name: String,
+        original_config2: Config2,
+        original_defaults: HashMap<String, String>,
+        original_overwrites: HashMap<String, String>,
+        test_dir: PathBuf,
+    }
+
+    impl OptionsStoreTestEnv {
+        fn new(tag: &str) -> Self {
+            let original_app_name = APP_NAME.read().unwrap().clone();
+            *APP_NAME.write().unwrap() =
+                format!("AtlasOptStoreTest-{}-{}", std::process::id(), tag);
+            let original_config2 = CONFIG2.read().unwrap().clone();
+            *CONFIG2.write().unwrap() = Config2::default();
+            let original_defaults = DEFAULT_SETTINGS.read().unwrap().clone();
+            DEFAULT_SETTINGS.write().unwrap().clear();
+            let original_overwrites = OVERWRITE_SETTINGS.read().unwrap().clone();
+            OVERWRITE_SETTINGS.write().unwrap().clear();
+            let file = Config::file_("2");
+            let test_dir = file.parent().unwrap().to_path_buf();
+            fs::remove_dir_all(&test_dir).ok();
+            Self {
+                original_app_name,
+                original_config2,
+                original_defaults,
+                original_overwrites,
+                test_dir,
+            }
+        }
+    }
+
+    impl Drop for OptionsStoreTestEnv {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.test_dir).ok();
+            *APP_NAME.write().unwrap() = self.original_app_name.clone();
+            *CONFIG2.write().unwrap() = self.original_config2.clone();
+            *DEFAULT_SETTINGS.write().unwrap() = self.original_defaults.clone();
+            *OVERWRITE_SETTINGS.write().unwrap() = self.original_overwrites.clone();
+        }
+    }
+
+    fn with_options_store_env<R>(tag: &str, test: impl FnOnce() -> R) -> R {
+        // Tolerate lock poisoning: a panicking sibling test must not cascade.
+        let _lock = CONFIG_STATE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let _env = OptionsStoreTestEnv::new(tag);
+        test()
+    }
+
+    #[test]
+    fn test_set_option_bumps_options_write_serial() {
+        with_options_store_env("bump", || {
+            assert_eq!(Config::get_options_write_serial(), 0);
+            Config::set_option(
+                "verification-method".to_owned(),
+                "use-both-passwords".to_owned(),
+            );
+            assert_eq!(Config::get_options_write_serial(), 1);
+            // Re-setting the identical value is a no-op and must not bump.
+            Config::set_option(
+                "verification-method".to_owned(),
+                "use-both-passwords".to_owned(),
+            );
+            assert_eq!(Config::get_options_write_serial(), 1);
+            Config::set_option("stop-service".to_owned(), "Y".to_owned());
+            assert_eq!(Config::get_options_write_serial(), 2);
+            // The serial key is reserved: it cannot be forged through the public setter.
+            Config::set_option(OPTIONS_WRITE_SERIAL_KEY.to_owned(), "999".to_owned());
+            assert_eq!(Config::get_options_write_serial(), 2);
+            // The serial persists to disk alongside the options.
+            let on_disk: Config2 = load_path(Config::file_("2"));
+            assert_eq!(
+                on_disk
+                    .options
+                    .get(OPTIONS_WRITE_SERIAL_KEY)
+                    .map(String::as_str),
+                Some("2")
+            );
+        });
+    }
+
+    #[test]
+    fn test_set_options_rejects_whole_map_replace_from_stale_snapshot() {
+        with_options_store_env("stale", || {
+            Config::set_option("stop-service".to_owned(), "Y".to_owned());
+            Config::set_option("local-ip-addr".to_owned(), "192.168.0.7".to_owned());
+            Config::set_option(
+                "verification-method".to_owned(),
+                "use-both-passwords".to_owned(),
+            );
+
+            // Writer A snapshots the whole map (legacy read-modify-write).
+            let stale_snapshot = Config::get_options();
+
+            // Writer B lands a per-key write after the snapshot was taken.
+            Config::set_option(
+                "custom-rendezvous-server".to_owned(),
+                "rdz.atlasos.work".to_owned(),
+            );
+
+            // Writer A pushes its mutated whole map: the base is now stale.
+            let mut pushed = stale_snapshot;
+            pushed.insert("relay-server".to_owned(), "relay.atlasos.work".to_owned());
+            Config::set_options(pushed);
+
+            // The stale replacement is rejected: B's key survives, A's push is dropped.
+            let options = Config::get_options();
+            assert_eq!(
+                options.get("custom-rendezvous-server").map(String::as_str),
+                Some("rdz.atlasos.work")
+            );
+            assert!(options.get("relay-server").is_none());
+            assert_eq!(options.get("stop-service").map(String::as_str), Some("Y"));
+            assert_eq!(
+                options.get("local-ip-addr").map(String::as_str),
+                Some("192.168.0.7")
+            );
+            assert_eq!(Config::get_options_write_serial(), 4);
+        });
+    }
+
+    #[test]
+    fn test_set_options_accepts_current_serial_and_defaulted_map_cannot_wipe() {
+        with_options_store_env("accept", || {
+            Config::set_option("stop-service".to_owned(), "Y".to_owned()); // serial 1
+
+            // A well-behaved legacy round-trip (fetch → mutate → push, no
+            // interleaving writer) is still accepted and bumps the serial.
+            let mut fetched = Config::get_options();
+            fetched.insert("relay-server".to_owned(), "relay.atlasos.work".to_owned());
+            Config::set_options(fetched);
+            let options = Config::get_options();
+            assert_eq!(
+                options.get("relay-server").map(String::as_str),
+                Some("relay.atlasos.work")
+            );
+            assert_eq!(options.get("stop-service").map(String::as_str), Some("Y"));
+            assert_eq!(Config::get_options_write_serial(), 2);
+
+            // A freshly-defaulted writer (post-corruption, or a different profile's
+            // empty store) carries no serial; its whole-map replacement must not
+            // wipe an established store. This is the v1.5.13 incident shape.
+            let mut fresh_default = HashMap::new();
+            fresh_default.insert(
+                "custom-rendezvous-server".to_owned(),
+                "rdz.atlasos.work".to_owned(),
+            );
+            Config::set_options(fresh_default);
+            let options = Config::get_options();
+            assert_eq!(options.get("stop-service").map(String::as_str), Some("Y"));
+            assert_eq!(
+                options.get("relay-server").map(String::as_str),
+                Some("relay.atlasos.work")
+            );
+            assert!(options.get("custom-rendezvous-server").is_none());
+        });
+    }
+
+    #[test]
+    fn test_apply_options_delta_merges_per_key() {
+        with_options_store_env("delta", || {
+            Config::set_option("stop-service".to_owned(), "Y".to_owned());
+            Config::set_option("local-ip-addr".to_owned(), "192.168.0.7".to_owned());
+            let serial_before = Config::get_options_write_serial();
+
+            let changed = Config::apply_options_delta(&[
+                (
+                    "verification-method".to_owned(),
+                    Some("use-both-passwords".to_owned()),
+                ),
+                ("local-ip-addr".to_owned(), None),
+                // Reserved key: a delta may never set the serial directly.
+                (OPTIONS_WRITE_SERIAL_KEY.to_owned(), Some("999".to_owned())),
+            ]);
+            assert!(changed);
+
+            let options = Config::get_options();
+            assert_eq!(
+                options.get("verification-method").map(String::as_str),
+                Some("use-both-passwords")
+            );
+            assert!(options.get("local-ip-addr").is_none());
+            assert_eq!(options.get("stop-service").map(String::as_str), Some("Y"));
+            // One bump per applied batch.
+            assert_eq!(Config::get_options_write_serial(), serial_before + 1);
+
+            // Replaying the same delta is a no-op.
+            let changed = Config::apply_options_delta(&[(
+                "verification-method".to_owned(),
+                Some("use-both-passwords".to_owned()),
+            )]);
+            assert!(!changed);
+            assert_eq!(Config::get_options_write_serial(), serial_before + 1);
+        });
+    }
+
+    #[test]
+    fn test_apply_options_delta_adopts_newer_on_disk_options_before_applying() {
+        with_options_store_env("adopt", || {
+            Config::set_option("stop-service".to_owned(), "Y".to_owned()); // memory serial 1
+
+            // Another process (e.g. a UI that fell back to a local write while the
+            // daemon restarted) has advanced the shared file beyond our in-memory view.
+            let mut disk = Config2::default();
+            disk.options
+                .insert("stop-service".to_owned(), "Y".to_owned());
+            disk.options.insert(
+                "verification-method".to_owned(),
+                "use-both-passwords".to_owned(),
+            );
+            disk.options
+                .insert(OPTIONS_WRITE_SERIAL_KEY.to_owned(), "5".to_owned());
+            store_path(Config::file_("2"), disk).unwrap();
+
+            Config::apply_options_delta(&[(
+                "custom-rendezvous-server".to_owned(),
+                Some("rdz.atlasos.work".to_owned()),
+            )]);
+
+            // The delta merges on top of the newer on-disk map instead of
+            // clobbering it with our stale in-memory snapshot.
+            let on_disk: Config2 = load_path(Config::file_("2"));
+            assert_eq!(
+                on_disk
+                    .options
+                    .get("verification-method")
+                    .map(String::as_str),
+                Some("use-both-passwords")
+            );
+            assert_eq!(
+                on_disk
+                    .options
+                    .get("custom-rendezvous-server")
+                    .map(String::as_str),
+                Some("rdz.atlasos.work")
+            );
+            assert_eq!(
+                on_disk.options.get("stop-service").map(String::as_str),
+                Some("Y")
+            );
+            assert_eq!(Config::get_options_write_serial(), 6);
+        });
+    }
+
+    #[test]
+    fn test_config2_set_keeps_higher_serial_options_on_whole_struct_sync() {
+        with_options_store_env("synccfg", || {
+            Config::set_option("stop-service".to_owned(), "Y".to_owned());
+            Config::set_option(
+                "verification-method".to_owned(),
+                "use-both-passwords".to_owned(),
+            ); // serial 2
+
+            // A whole-Config2 sync (root service ⇄ user process) arrives carrying
+            // an older options lineage — e.g. a freshly seeded root copy.
+            let mut incoming = Config2::default();
+            incoming.nat_type = 2;
+            incoming.options.insert(
+                "custom-rendezvous-server".to_owned(),
+                "rdz.atlasos.work".to_owned(),
+            );
+            incoming
+                .options
+                .insert(OPTIONS_WRITE_SERIAL_KEY.to_owned(), "1".to_owned());
+            assert!(Config2::set(incoming));
+
+            // Non-options fields sync; the higher-serial options map is preserved.
+            assert_eq!(Config::get_nat_type(), 2);
+            let options = Config::get_options();
+            assert_eq!(options.get("stop-service").map(String::as_str), Some("Y"));
+            assert_eq!(
+                options.get("verification-method").map(String::as_str),
+                Some("use-both-passwords")
+            );
+            assert!(options.get("custom-rendezvous-server").is_none());
+
+            // A genuinely newer lineage is adopted wholesale.
+            let mut newer = Config2::default();
+            newer.options.insert(
+                "custom-rendezvous-server".to_owned(),
+                "rdz.atlasos.work".to_owned(),
+            );
+            newer
+                .options
+                .insert(OPTIONS_WRITE_SERIAL_KEY.to_owned(), "9".to_owned());
+            assert!(Config2::set(newer));
+            let options = Config::get_options();
+            assert_eq!(
+                options.get("custom-rendezvous-server").map(String::as_str),
+                Some("rdz.atlasos.work")
+            );
+            assert!(options.get("stop-service").is_none());
+            assert_eq!(Config::get_options_write_serial(), 9);
+        });
+    }
+
+    #[test]
+    fn test_load_path_quarantines_corrupt_options_config() {
+        with_options_store_env("corrupt", || {
+            let file = Config::file_("2");
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(&file, b"[options\nthis is not valid toml").unwrap();
+
+            let loaded: Config2 = load_path(file.clone());
+            assert!(loaded.options.is_empty());
+
+            // The unreadable file is preserved for recovery instead of being left
+            // in place for the next store to silently overwrite.
+            assert!(!file.exists());
+            let quarantined = fs::read_dir(file.parent().unwrap())
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.file_name().to_string_lossy().contains("corrupt"))
+                .count();
+            assert_eq!(quarantined, 1);
+        });
+    }
+
+    #[test]
+    fn test_racing_writers_around_restart_never_lose_established_options() {
+        // The v1.5.13 incident in one deterministic test: many writers mutate
+        // the shared options store concurrently while the store is repeatedly
+        // reloaded from disk (each reload models a daemon/process restart
+        // re-reading the file). Mixes both writer shapes:
+        //   * per-key delta writers (the new merge-safe path), and
+        //   * legacy whole-map read-modify-write writers (`get_options` →
+        //     mutate → `set_options`) — the exact shape that dropped keys.
+        // Invariant under test: options established *before* the storm are never
+        // silently lost, no matter how the writes and restarts interleave.
+        with_options_store_env("race", || {
+            use std::sync::atomic::{AtomicBool, Ordering};
+            use std::sync::Arc;
+
+            // Establish three options that must survive the storm — the exact
+            // keys the incident dropped.
+            Config::set_option("stop-service".to_owned(), "Y".to_owned());
+            Config::set_option("local-ip-addr".to_owned(), "192.168.0.7".to_owned());
+            Config::set_option(
+                "verification-method".to_owned(),
+                "use-both-passwords".to_owned(),
+            );
+
+            let stop = Arc::new(AtomicBool::new(false));
+            let mut handles = Vec::new();
+
+            // Per-key delta writers.
+            for i in 0..8 {
+                handles.push(std::thread::spawn(move || {
+                    let key = format!("delta-key-{i}");
+                    Config::apply_options_delta(&[(key, Some(format!("v{i}")))]);
+                }));
+            }
+
+            // Legacy whole-map read-modify-write writers: fetch the whole map,
+            // add one key, push it back. Before the fix, a push built from a
+            // snapshot taken before a peer's write would erase that peer's key.
+            for j in 0..4 {
+                handles.push(std::thread::spawn(move || {
+                    let mut map = Config::get_options();
+                    map.insert(format!("whole-key-{j}"), format!("w{j}"));
+                    Config::set_options(map);
+                }));
+            }
+
+            // Restart simulator: reload the in-memory config from disk while the
+            // writers run. A restart always sees a consistent committed state.
+            let stop_reader = stop.clone();
+            let restart = std::thread::spawn(move || {
+                let mut reloads = 0;
+                while !stop_reader.load(Ordering::Relaxed) && reloads < 2000 {
+                    *CONFIG2.write().unwrap() = Config2::load();
+                    reloads += 1;
+                    std::thread::yield_now();
+                }
+            });
+
+            for h in handles {
+                h.join().unwrap();
+            }
+            stop.store(true, Ordering::Relaxed);
+            restart.join().unwrap();
+
+            // Re-sync the in-memory view with the final on-disk state (the
+            // restarter may have left an intermediate snapshot loaded).
+            *CONFIG2.write().unwrap() = Config2::load();
+            let options = Config::get_options();
+
+            // The three established keys must never be lost.
+            assert_eq!(options.get("stop-service").map(String::as_str), Some("Y"));
+            assert_eq!(
+                options.get("local-ip-addr").map(String::as_str),
+                Some("192.168.0.7")
+            );
+            assert_eq!(
+                options.get("verification-method").map(String::as_str),
+                Some("use-both-passwords")
+            );
+            // Every per-key delta writer lands (per-key writes never contend
+            // destructively).
+            for i in 0..8 {
+                assert_eq!(
+                    options.get(&format!("delta-key-{i}")).map(String::as_str),
+                    Some(format!("v{i}").as_str()),
+                    "per-key delta writer {i} was lost"
+                );
+            }
+            // The serial stayed monotonic and advanced past the seed writes.
+            assert!(Config::get_options_write_serial() >= 3);
+        });
+    }
+
+    #[test]
+    fn test_options_delta_semantics_removal_vs_set() {
+        // Generic delta tri-state, matching `set_options`/`is_option_can_save`:
+        //   * `None`                       -> remove the key
+        //   * `Some(val)` that is savable  -> store verbatim (an empty string is
+        //                                     a legitimate value, incl. an empty
+        //                                     override of a non-empty default)
+        //   * `Some(val)` forced by an OVERWRITE setting -> not stored (the
+        //                                     build override wins), so removed.
+        with_options_store_env("tri", || {
+            DEFAULT_SETTINGS
+                .write()
+                .unwrap()
+                .insert("has-default".to_owned(), "built-in".to_owned());
+            OVERWRITE_SETTINGS
+                .write()
+                .unwrap()
+                .insert("forced".to_owned(), "locked".to_owned());
+
+            Config::apply_options_delta(&[
+                ("has-default".to_owned(), Some(String::new())),
+                ("plain".to_owned(), Some("value".to_owned())),
+                ("forced".to_owned(), Some("attempt".to_owned())),
+            ]);
+            let raw = CONFIG2.read().unwrap().options.clone();
+            // Empty value overriding a non-empty default is stored verbatim.
+            assert_eq!(raw.get("has-default").map(String::as_str), Some(""));
+            assert_eq!(raw.get("plain").map(String::as_str), Some("value"));
+            // A key under an OVERWRITE setting can't be user-stored.
+            assert!(raw.get("forced").is_none());
+
+            // Explicit removal via `None`.
+            Config::apply_options_delta(&[("plain".to_owned(), None)]);
+            assert!(CONFIG2.read().unwrap().options.get("plain").is_none());
+        });
     }
 }

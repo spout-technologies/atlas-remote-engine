@@ -285,22 +285,27 @@ fn heartbeat_url() -> String {
 }
 
 fn handle_config_options(config_options: HashMap<String, String>) {
-    let mut options = Config::get_options();
+    // Apply the server-pushed advanced settings as a per-key delta instead of
+    // reading the whole map, mutating it and pushing it back. The old
+    // read-modify-write raced any concurrent option writer around a daemon
+    // restart and could silently drop keys (the v1.5.13 loss class). The delta
+    // only names the keys this push touches, preserving the original priority
+    // rule exactly:
+    //   * empty value AND empty default  -> remove (fall back to built-in), and
+    //   * otherwise                      -> set the value (an empty string still
+    //                                       overrides a non-empty default).
     let default_settings = config::DEFAULT_SETTINGS.read().unwrap().clone();
-    config_options
-        .iter()
+    let delta: Vec<(String, Option<String>)> = config_options
+        .into_iter()
         .map(|(k, v)| {
-            // Priority: user config > default advanced options.
-            // Only when default advanced options are also empty, remove user option (fallback to built-in default);
-            // otherwise insert an empty value so user config remains present.
-            if v.is_empty() && default_settings.get(k).map_or("", |v| v).is_empty() {
-                options.remove(k);
+            if v.is_empty() && default_settings.get(&k).map_or("", |v| v).is_empty() {
+                (k, None)
             } else {
-                options.insert(k.to_string(), v.to_string());
+                (k, Some(v))
             }
         })
-        .count();
-    Config::set_options(options);
+        .collect();
+    Config::apply_options_delta(&delta);
 }
 
 #[allow(unused)]

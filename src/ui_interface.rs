@@ -409,13 +409,35 @@ pub fn get_sound_inputs() -> Vec<String> {
 
 #[inline]
 pub fn set_options(m: HashMap<String, String>) {
+    // Callers build `m` as the batch of options to write (every call site drops
+    // empty values), not a full-replace, so this is a batch of per-key upserts.
+    // Routing it through the merge-safe per-key delta path means a stale in-cache
+    // snapshot can never clobber keys outside this batch — the root cause of the
+    // v1.5.13 silent option loss, where the whole OPTIONS cache was pushed back.
+    let delta: Vec<(String, Option<String>)> = m
+        .iter()
+        .map(|(k, v)| (k.clone(), if v.is_empty() { None } else { Some(v.clone()) }))
+        .collect();
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
-        *OPTIONS.lock().unwrap() = m.clone();
-        ipc::set_options(m).ok();
+        // Reflect immediately in the UI read cache (merge, not replace).
+        {
+            let mut options = OPTIONS.lock().unwrap();
+            for (k, v) in &m {
+                if v.is_empty() {
+                    options.remove(k);
+                } else {
+                    options.insert(k.clone(), v.clone());
+                }
+            }
+        }
+        ipc::apply_options_delta(delta);
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
-    Config::set_options(m);
+    {
+        let _nat = crate::CheckTestNatType::new();
+        Config::apply_options_delta(&delta);
+    }
 }
 
 #[inline]
@@ -449,13 +471,21 @@ pub fn set_option(key: String, value: String) {
     }
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     {
-        let mut options = OPTIONS.lock().unwrap();
-        if value.is_empty() {
-            options.remove(&key);
-        } else {
-            options.insert(key.clone(), value.clone());
+        // Reflect immediately in the UI read cache, then persist ONLY this key
+        // via a merge-safe delta. The previous code pushed the entire OPTIONS
+        // cache back to the daemon, so a cache that had gone stale (e.g. after a
+        // 1s IPC-timeout fallback) silently erased every unrelated key — the
+        // v1.5.13 first-launch regression.
+        {
+            let mut options = OPTIONS.lock().unwrap();
+            if value.is_empty() {
+                options.remove(&key);
+            } else {
+                options.insert(key.clone(), value.clone());
+            }
         }
-        ipc::set_options(options.clone()).ok();
+        let v = if value.is_empty() { None } else { Some(value) };
+        ipc::apply_options_delta(vec![(key, v)]);
     }
     #[cfg(any(target_os = "android", target_os = "ios"))]
     {

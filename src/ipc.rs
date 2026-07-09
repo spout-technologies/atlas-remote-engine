@@ -335,6 +335,16 @@ pub enum Data {
     OnlineStatus(Option<(i64, bool)>),
     Config((String, Option<String>)),
     Options(Option<HashMap<String, String>>),
+    /// Merge-safe, per-key options update. Each entry is `(key, Some(value))` to
+    /// set or `(key, None)`/empty to remove. The daemon applies the delta on top
+    /// of its own authoritative map (see `Config::apply_options_delta`) and acks
+    /// with an empty `OptionsDelta(vec![])`, so no writer ever pushes a whole map
+    /// built from a stale or timed-out snapshot. Additive to upstream's
+    /// `Data::Options` protocol: an older binary that doesn't know this variant
+    /// fails to deserialize the frame and ignores it on the main IPC channel,
+    /// which the sender detects via the missing ack and handles by falling back
+    /// to the legacy whole-map path. Request = the delta; ack = an empty vector.
+    OptionsDelta(Vec<(String, Option<String>)>),
     NatType(Option<i32>),
     ConfirmedKey(Option<(Vec<u8>, Vec<u8>)>),
     RawMessage(Vec<u8>),
@@ -926,6 +936,21 @@ async fn handle(data: Data, stream: &mut Connection) {
                 allow_err!(stream.send(&Data::Options(None)).await);
             }
         },
+        Data::OptionsDelta(delta) => {
+            // Empty vector = ack echo from a peer daemon; nothing to apply.
+            if !delta.is_empty() {
+                let _chk = CheckIfRestart::new();
+                let _nat = CheckTestNatType::new();
+                if let Some((_, Some(v))) = delta.iter().find(|(k, _)| k == "privacy-mode-impl-key")
+                {
+                    crate::privacy_mode::switch(v);
+                }
+                Config::apply_options_delta(&delta);
+            }
+            // Ack so the sender can distinguish "applied by this daemon" from
+            // "ignored by an older daemon that doesn't know this variant".
+            allow_err!(stream.send(&Data::OptionsDelta(vec![])).await);
+        }
         Data::NatType(_) => {
             let t = Config::get_nat_type();
             allow_err!(stream.send(&Data::NatType(Some(t))).await);
@@ -1722,7 +1747,9 @@ async fn get_options_(ms_timeout: u64) -> ResultType<HashMap<String, String>> {
     let mut c = connect(ms_timeout, "").await?;
     c.send(&Data::Options(None)).await?;
     if let Some(Data::Options(Some(value))) = c.next_timeout(ms_timeout).await? {
-        Config::set_options(value.clone());
+        // Pull-side cache mirror: adopt the daemon's serial, never bump, never
+        // regress below a fresher local write. See `Config::cache_options`.
+        Config::cache_options(value.clone());
         Ok(value)
     } else {
         Ok(Config::get_options())
@@ -1747,13 +1774,103 @@ pub async fn get_option_async(key: &str) -> String {
 }
 
 pub fn set_option(key: &str, value: &str) {
-    let mut options = get_options();
-    if value.is_empty() {
-        options.remove(key);
+    let v = if value.is_empty() {
+        None
     } else {
-        options.insert(key.to_owned(), value.to_owned());
+        Some(value.to_owned())
+    };
+    apply_options_delta(vec![(key.to_owned(), v)]);
+}
+
+/// Applies a per-key options delta everywhere it must land: the running daemon
+/// (authoritative on-disk map) and this process's own `Config`.
+///
+/// This replaces the legacy "fetch whole map → mutate → push whole map" flow
+/// that caused the v1.5.13 silent option loss: `get_options()` could time out
+/// and fall back to a stale local map, which was then pushed wholesale, erasing
+/// keys the caller never touched. A delta only ever names the keys it changes,
+/// so a stale snapshot can no longer clobber anything.
+///
+/// If the daemon is an older build that doesn't understand `OptionsDelta`, it
+/// ignores the frame and never acks; we detect the missing ack and fall back to
+/// a *fresh* whole-map round-trip (fetch the daemon's current map, apply the
+/// delta to that, push it back), which is serial-arbitrated on a current daemon
+/// and, on an old daemon, still far safer than pushing a timed-out local map.
+pub fn apply_options_delta(delta: Vec<(String, Option<String>)>) {
+    if delta.is_empty() {
+        return;
     }
-    set_options(options).ok();
+    let confirmed = send_options_delta_to_daemon(delta.clone());
+    if !confirmed {
+        // No current daemon (or an old one that ignored the delta): reconcile
+        // through the legacy whole-map path against a freshly fetched base.
+        set_options_legacy_from_delta(&delta).ok();
+    }
+    // Always mirror into this process's own Config so the in-memory view and
+    // this profile's file reflect the change immediately; serial arbitration in
+    // `Config::apply_options_delta` keeps it from regressing a newer on-disk map.
+    Config::apply_options_delta(&delta);
+}
+
+#[tokio::main(flavor = "current_thread")]
+async fn send_options_delta_to_daemon(delta: Vec<(String, Option<String>)>) -> bool {
+    let _nat = CheckTestNatType::new();
+    if let Ok(mut c) = connect(1000, "").await {
+        if c.send(&Data::OptionsDelta(delta)).await.is_err() {
+            return false;
+        }
+        // A current daemon acks with `OptionsDelta(_)`; an older daemon ignores
+        // the frame on the main channel and never replies, so we time out here.
+        matches!(c.next_timeout(1000).await, Ok(Some(Data::OptionsDelta(_))))
+    } else {
+        false
+    }
+}
+
+/// Legacy fallback: fetch the daemon's current whole map, apply the delta to
+/// that fresh base, and push it back. Retries a few times so a benign race with
+/// another writer (serial arbitration rejecting our push) self-heals instead of
+/// silently dropping the update. Never falls back to a local snapshot as the
+/// base — that stale-base push is precisely the incident being fixed.
+#[tokio::main(flavor = "current_thread")]
+async fn set_options_legacy_from_delta(delta: &[(String, Option<String>)]) -> ResultType<()> {
+    let _nat = CheckTestNatType::new();
+    for _ in 0..3 {
+        let Ok(mut c) = connect(1000, "").await else {
+            break;
+        };
+        c.send(&Data::Options(None)).await?;
+        let mut map = match c.next_timeout(1000).await? {
+            Some(Data::Options(Some(map))) => map,
+            _ => break,
+        };
+        for (k, v) in delta {
+            match v {
+                Some(v) if !v.is_empty() => {
+                    map.insert(k.clone(), v.clone());
+                }
+                _ => {
+                    map.remove(k);
+                }
+            }
+        }
+        c.send(&Data::Options(Some(map.clone()))).await?;
+        c.next_timeout(1000).await.ok();
+        // Confirm the push took by re-reading; if a racing writer won, retry.
+        if let Ok(mut c2) = connect(1000, "").await {
+            c2.send(&Data::Options(None)).await?;
+            if let Some(Data::Options(Some(applied))) = c2.next_timeout(1000).await? {
+                let landed = delta.iter().all(|(k, v)| match v {
+                    Some(v) if !v.is_empty() => applied.get(k) == Some(v),
+                    _ => !applied.contains_key(k),
+                });
+                if landed {
+                    return Ok(());
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -2120,6 +2237,64 @@ mod test {
     fn verify_ffi_enum_data_size() {
         println!("{}", std::mem::size_of::<Data>());
         assert!(std::mem::size_of::<Data>() <= 120);
+    }
+
+    #[test]
+    fn test_options_delta_wire_roundtrip() {
+        // The merge-safe per-key options update must survive the exact JSON
+        // codec the IPC transport uses (`serde_json` over `BytesCodec`), so a
+        // current daemon and client agree on the wire. Covers set, remove, and
+        // the empty ack echo.
+        let delta = vec![
+            (
+                "verification-method".to_owned(),
+                Some("use-both-passwords".to_owned()),
+            ),
+            ("stop-service".to_owned(), None),
+        ];
+        let encoded = serde_json::to_string(&Data::OptionsDelta(delta.clone())).unwrap();
+        // Internally-tagged, additive to the upstream protocol: the variant is
+        // carried by name, so field order / new variants never shift others.
+        assert!(encoded.contains("\"t\":\"OptionsDelta\""));
+        match serde_json::from_str::<Data>(&encoded).unwrap() {
+            Data::OptionsDelta(back) => assert_eq!(back, delta),
+            other => panic!("decoded to the wrong variant: {:?}", other),
+        }
+
+        // The daemon's ack is an empty vector.
+        let ack = serde_json::to_string(&Data::OptionsDelta(vec![])).unwrap();
+        match serde_json::from_str::<Data>(&ack).unwrap() {
+            Data::OptionsDelta(back) => assert!(back.is_empty()),
+            other => panic!("ack decoded to the wrong variant: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_options_delta_unknown_variant_is_ignored_not_fatal() {
+        // Forward compatibility: an older binary that predates `OptionsDelta`
+        // cannot deserialize the frame. `ConnectionTmpl::next()` turns an
+        // undecodable-but-complete frame into `Ok(None)` (not `Err`), which the
+        // main IPC accept loop ignores without closing the connection — so the
+        // sender simply gets no ack and falls back to the legacy whole-map path.
+        // Emulate the old enum with a decoder that lacks the variant.
+        #[derive(serde::Deserialize)]
+        #[serde(tag = "t", content = "c")]
+        enum LegacyDataSubset {
+            Options(Option<std::collections::HashMap<String, String>>),
+        }
+        let encoded = serde_json::to_string(&Data::OptionsDelta(vec![(
+            "k".to_owned(),
+            Some("v".to_owned()),
+        )]))
+        .unwrap();
+        // Old binary fails to decode the new variant...
+        assert!(serde_json::from_str::<LegacyDataSubset>(&encoded).is_err());
+        // ...but still decodes the legacy variant it does know (fallback path).
+        let legacy = serde_json::to_string(&Data::Options(Some(
+            [("k".to_owned(), "v".to_owned())].into_iter().collect(),
+        )))
+        .unwrap();
+        assert!(serde_json::from_str::<LegacyDataSubset>(&legacy).is_ok());
     }
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
