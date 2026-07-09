@@ -3504,7 +3504,7 @@ impl Status {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::{permanent_password::PERMANENT_PASSWORD_ENC_VERSION, *};
 
     static CONFIG_STATE_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -4314,7 +4314,7 @@ mod tests {
         }
     }
 
-    fn with_options_store_env<R>(tag: &str, test: impl FnOnce() -> R) -> R {
+    pub(crate) fn with_options_store_env<R>(tag: &str, test: impl FnOnce() -> R) -> R {
         // Tolerate lock poisoning: a panicking sibling test must not cascade.
         let _lock = CONFIG_STATE_TEST_LOCK
             .lock()
