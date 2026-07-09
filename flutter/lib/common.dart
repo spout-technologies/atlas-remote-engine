@@ -2584,6 +2584,31 @@ List<String>? urlLinkToCmdArgs(Uri uri) {
   return null;
 }
 
+/// Atlas fleet devices are synthesised into the address book with a real
+/// Postgres UUID as their `id` (see /api/ab), not a genuine RustDesk peer ID
+/// (which is always numeric-charset, never hyphenated) — deliberately, so
+/// they are not directly dialable. Connecting to one must go through Atlas'
+/// governed session flow (consent/approval/audit) instead of RustDesk's
+/// native dial. This is the discriminator connect() uses to tell the two
+/// apart.
+final _fleetDeviceIdPattern = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+
+bool isFleetDeviceId(String id) => _fleetDeviceIdPattern.hasMatch(id);
+
+/// Opens the device's page in the Atlas web dashboard, where the existing
+/// governed connect flow (consent/approval, rmm_remote_sessions) runs —
+/// unchanged by this client. Reuses the same host /api/login already
+/// resolves to, so there is one source of truth for "what is Atlas' app
+/// host", not two.
+Future<void> openGovernedDeviceConnect(String deviceId) async {
+  final apiServer = await bind.mainGetApiServer();
+  if (apiServer.isEmpty) return;
+  final uri = Uri.parse(apiServer).replace(
+      path: '/', queryParameters: {'device': deviceId});
+  await launchUrl(uri);
+}
+
 connectMainDesktop(String id,
     {required bool isFileTransfer,
     required bool isViewCamera,
@@ -2642,6 +2667,12 @@ connect(BuildContext context, String id,
     String? connToken,
     bool? isSharedPassword}) async {
   if (id == '') return;
+  if (isFleetDeviceId(id)) {
+    // Atlas fleet peer — not directly dialable. Hand off to the governed
+    // connect flow in the web dashboard instead of RustDesk's native dial.
+    await openGovernedDeviceConnect(id);
+    return;
+  }
   if (!isDesktop || desktopType == DesktopType.main) {
     try {
       if (Get.isRegistered<IDTextEditingController>()) {
