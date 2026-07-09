@@ -1062,7 +1062,17 @@ pub fn get_api_server(api: String, custom: String) -> String {
     res
 }
 
-fn get_api_server_(api: String, custom: String) -> String {
+/// Atlas Remote fork: the account/API backend (login, address book, OIDC
+/// options — everything user_model.dart / ab_model.dart / hbbs/account.rs
+/// hit) always defaults to Atlas' own app, on its own host — separate from
+/// the ID/rendezvous relay (159.195.16.230), which runs only the open-source
+/// hbbs/hbbr and has never served an account API. Deriving the API host from
+/// the rendezvous host (as upstream RustDesk Pro does, assuming both are
+/// colocated) is wrong for this fork's split-host architecture, so that
+/// derivation is not attempted here.
+pub const ATLAS_API_SERVER_DEFAULT: &str = "https://dash.atlasos.work";
+
+fn get_api_server_(api: String, _custom: String) -> String {
     #[cfg(windows)]
     if let Ok(lic) = crate::platform::windows::get_license_from_exe_name() {
         if !lic.api.is_empty() {
@@ -1072,21 +1082,7 @@ fn get_api_server_(api: String, custom: String) -> String {
     if !api.is_empty() {
         return api.to_owned();
     }
-    let s0 = get_custom_rendezvous_server(custom);
-    if !s0.is_empty() {
-        let s = crate::increase_port(&s0, -2);
-        if s == s0 {
-            return format!("http://{}:{}", s, config::RENDEZVOUS_PORT - 2);
-        } else {
-            return format!("http://{}", s);
-        }
-    }
-    // Atlas Remote fork: the account/API backend defaults to Atlas' own host,
-    // not upstream RustDesk's public cloud. This is the URL the login/account
-    // flow (user_model.dart login / currentUser / logout / OIDC options) hits
-    // when no custom api-server is configured. Rebranded to match the fork's
-    // baked relay + atlasos.work surfaces.
-    "https://admin.atlasos.work".to_owned()
+    ATLAS_API_SERVER_DEFAULT.to_owned()
 }
 
 #[inline]
