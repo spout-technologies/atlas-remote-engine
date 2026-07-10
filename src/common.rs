@@ -1025,7 +1025,11 @@ pub fn get_full_name() -> String {
 }
 
 pub fn is_setup(name: &str) -> bool {
-    name.to_lowercase().ends_with("install.exe")
+    // Atlas: accept both `...install.exe` and `...setup.exe` — the CI distributes
+    // the packer as `...-windows-setup.exe`. Keep in sync with the click_setup
+    // check in libs/portable/src/main.rs.
+    let name = name.to_lowercase();
+    name.ends_with("install.exe") || name.ends_with("setup.exe")
 }
 
 pub fn get_custom_rendezvous_server(custom: String) -> String {

@@ -186,7 +186,13 @@ fn main() {
         }
         i += 1;
     }
-    let click_setup = args.is_empty() && arg_exe.to_lowercase().ends_with("install.exe");
+    // Atlas: the CI distributes the packer as `...-windows-setup.exe`, so accept
+    // both suffixes — otherwise double-clicking runs portable instead of installing
+    // (RustDesk only ever named it `...install.exe`). Keep in sync with
+    // `src/common.rs::is_setup`.
+    let arg_exe_lower = arg_exe.to_lowercase();
+    let click_setup = args.is_empty()
+        && (arg_exe_lower.ends_with("install.exe") || arg_exe_lower.ends_with("setup.exe"));
     #[cfg(windows)]
     let quick_support = args.is_empty() && win::is_quick_support_exe(&arg_exe);
     #[cfg(not(windows))]
