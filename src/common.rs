@@ -2160,6 +2160,21 @@ fn apply_atlas_client_defaults() {
                 .or_insert_with(|| v.to_owned());
         }
     }
+    // DEFAULT_SETTINGS — server options read by config::get_option/get_bool_option.
+    // R3: Atlas is an RMM engine (operators manage their own endpoints), so allow
+    // changing a device's settings during a live session — default the anti-tamper
+    // `allow-remote-config-modification` ON. Otherwise the whole Settings page is
+    // blocked by a dark scrim while the box is being controlled
+    // (desktop_setting_page.dart `_buildBlock` -> `canBeBlocked`). Written as a
+    // *default* (or_insert): a device owner can still set it off (their config
+    // wins over DEFAULT_SETTINGS), and a real custom.txt / OVERWRITE_SETTINGS
+    // still overrides.
+    {
+        let mut server = config::DEFAULT_SETTINGS.write().unwrap();
+        for (k, v) in [("allow-remote-config-modification", "Y")] {
+            server.entry(k.to_owned()).or_insert_with(|| v.to_owned());
+        }
+    }
 }
 
 fn read_custom_client_advanced_settings(
