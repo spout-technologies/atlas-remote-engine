@@ -1012,7 +1012,12 @@ pub fn is_rustdesk() -> bool {
 
 #[inline]
 pub fn get_uri_prefix() -> String {
-    format!("{}://", get_app_name().to_lowercase())
+    // Strip spaces so a multi-word APP_NAME ("Atlas Remote") yields a valid,
+    // single-token URL scheme ("atlasremote://") that matches what the Windows
+    // installer registers and what the Atlas hub / macOS Info.plist emit
+    // (atlasremote://…). Without this the runtime prefix was "atlas remote://"
+    // (with a space) — an invalid scheme no handler could be invoked with.
+    format!("{}://", get_app_name().to_lowercase().replace(' ', ""))
 }
 
 #[cfg(target_os = "macos")]
