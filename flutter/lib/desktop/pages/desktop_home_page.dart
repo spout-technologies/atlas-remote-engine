@@ -690,11 +690,17 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   }
 
   Widget buildHelpCards(String updateUrl) {
-    if (!bind.isCustomClient() &&
-        updateUrl.isNotEmpty &&
-        !isCardClosed &&
-        bind.mainUriPrefixSync().contains('rustdesk')) {
-      final isToUpdate = (isWindows || isMacOS) && bind.mainIsInstalled();
+    // Atlas: surface the in-app update banner on macOS. The stock gate (below:
+    // non-custom client + a rustdesk:// URI prefix) excludes our rebranded
+    // fork, and macOS otherwise has no update path at all. Windows keeps its
+    // existing Rust auto-updater and is intentionally left untouched here.
+    final atlasMacUpdate = isMacOS && updateUrl.isNotEmpty && !isCardClosed;
+    if (atlasMacUpdate ||
+        (!bind.isCustomClient() &&
+            updateUrl.isNotEmpty &&
+            !isCardClosed &&
+            bind.mainUriPrefixSync().contains('rustdesk'))) {
+      final isToUpdate = isMacOS || (isWindows && bind.mainIsInstalled());
       String btnText = isToUpdate ? 'Update' : 'Download';
       GestureTapCallback onPressed = () async {
         final Uri url = Uri.parse('https://atlasos.work/download');
@@ -713,7 +719,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
           closeButton: true,
           help: isToUpdate ? 'Changelog' : null,
           link: isToUpdate
-              ? 'https://github.com/rustdesk/rustdesk/releases/tag/${bind.mainGetNewVersion()}'
+              ? 'https://github.com/spout-technologies/atlas-remote-engine/releases'
               : null);
     }
     if (systemError.isNotEmpty) {

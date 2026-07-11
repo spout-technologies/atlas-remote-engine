@@ -12,16 +12,25 @@ final _isExtracting = false.obs;
 void handleUpdate(String releasePageUrl) {
   _isExtracting.value = false;
   String downloadUrl = releasePageUrl.replaceAll('tag', 'download');
-  String version = downloadUrl.substring(downloadUrl.lastIndexOf('/') + 1);
-  final String downloadFile =
-      bind.mainGetCommonSync(key: 'download-file-$version');
-  if (downloadFile.startsWith('error:')) {
-    final error = downloadFile.replaceFirst('error:', '');
-    msgBox(gFFI.sessionId, 'custom-nocancel-nook-hasclose', 'Error', error,
-        releasePageUrl, gFFI.dialogManager);
-    return;
+  // Atlas: the hub's engine-version check returns a DIRECT asset URL
+  // (…/download/<tag>/AtlasRemote-<ver>-<arch>.{dmg,exe}), so use it as-is. The
+  // stock path below rebuilds a `rustdesk-<ver>-…` filename, which 404s for our
+  // rebranded assets — only run it when we were handed a release-page URL.
+  final bool isDirectAsset =
+      RegExp(r'\.(dmg|exe|msi)$', caseSensitive: false).hasMatch(downloadUrl);
+  if (!isDirectAsset) {
+    final String version =
+        downloadUrl.substring(downloadUrl.lastIndexOf('/') + 1);
+    final String downloadFile =
+        bind.mainGetCommonSync(key: 'download-file-$version');
+    if (downloadFile.startsWith('error:')) {
+      final error = downloadFile.replaceFirst('error:', '');
+      msgBox(gFFI.sessionId, 'custom-nocancel-nook-hasclose', 'Error', error,
+          releasePageUrl, gFFI.dialogManager);
+      return;
+    }
+    downloadUrl = '$downloadUrl/$downloadFile';
   }
-  downloadUrl = '$downloadUrl/$downloadFile';
 
   SimpleWrapper downloadId = SimpleWrapper('');
   SimpleWrapper<VoidCallback> onCanceled = SimpleWrapper(() {});

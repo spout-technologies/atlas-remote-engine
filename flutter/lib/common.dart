@@ -4148,18 +4148,23 @@ void earlyAssert() {
 
 void checkUpdate() {
   if (!isWeb) {
-    if (!bind.isCustomClient()) {
-      platformFFI.registerEventHandler(
-          kCheckSoftwareUpdateFinish, kCheckSoftwareUpdateFinish,
-          (Map<String, dynamic> evt) async {
-        if (evt['url'] is String) {
-          stateGlobal.updateUrl.value = evt['url'];
-        }
-      });
-      Timer(const Duration(seconds: 1), () async {
-        bind.mainGetSoftwareUpdateUrl();
-      });
-    }
+    // Atlas: run the in-app update check for our custom client too. The Rust
+    // side (common.rs::check_software_update) already targets the Atlas hub's
+    // engine-version endpoint and returns the exact asset URL; the stock
+    // `!isCustomClient()` gate meant this handler was never registered, so the
+    // resulting updateUrl was dropped and the macOS "new version available"
+    // banner never appeared. Still governed by the enable-check-update option
+    // on the Rust side.
+    platformFFI.registerEventHandler(
+        kCheckSoftwareUpdateFinish, kCheckSoftwareUpdateFinish,
+        (Map<String, dynamic> evt) async {
+      if (evt['url'] is String) {
+        stateGlobal.updateUrl.value = evt['url'];
+      }
+    });
+    Timer(const Duration(seconds: 1), () async {
+      bind.mainGetSoftwareUpdateUrl();
+    });
   }
 }
 
