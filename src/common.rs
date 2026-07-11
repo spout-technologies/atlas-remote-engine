@@ -940,9 +940,11 @@ pub fn is_modifier(evt: &KeyEvent) -> bool {
 }
 
 pub fn check_software_update() {
-    if is_custom_client() {
-        return;
-    }
+    // Atlas build: run the update check for our custom client. The version-check
+    // URL now targets the Atlas hub (see hbb_common::version_check_request), not
+    // api.rustdesk.com, so there is no phone-home — this gives the Atlas Remote
+    // app AnyDesk-style "a new version is available" in-app updates. Still gated
+    // on the user-facing enable-check-update option so it can be turned off.
     let opt = LocalConfig::get_option(keys::OPTION_ENABLE_CHECK_UPDATE);
     if config::option2bool(keys::OPTION_ENABLE_CHECK_UPDATE, &opt) {
         std::thread::spawn(move || allow_err!(do_check_software_update()));

@@ -513,11 +513,19 @@ List<TTextMenu> toolbarControls(BuildContext context, String id, FFI ffi) {
   if (isDefaultConn && (isDesktop || isWebDesktop)) {
     v.add(TTextMenu(child: Offstage(), onPressed: () {}, divider: true));
   }
-  // ctrlAltDel
+  // ctrlAltDel — always offer it for Windows peers (AnyDesk/Level parity) so the
+  // operator can reach the secure/login desktop. Previously gated on
+  // pi.sasEnabled, which the controlled side only reports true when its serving
+  // process is SYSTEM — so at the login screen (or when not served by the
+  // elevated service) the item vanished and there was no way to send Ctrl+Alt+Del.
+  // The actual SAS injection still requires the controlled side to be served by
+  // the installed SYSTEM service; this just guarantees the control is reachable.
   if (isDefaultConn &&
       !ffiModel.viewOnly &&
       ffiModel.keyboard &&
-      (pi.platform == kPeerPlatformLinux || pi.sasEnabled)) {
+      (pi.platform == kPeerPlatformLinux ||
+          pi.platform == kPeerPlatformWindows ||
+          pi.sasEnabled)) {
     v.add(
       TTextMenu(
           child: Text('${translate("Insert Ctrl + Alt + Del")}'),

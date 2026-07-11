@@ -307,7 +307,12 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
       menu.add(RemoteMenuEntry.insertLock(sessionId, padding,
           dismissFunc: cancelFunc));
 
-      if (pi.platform == kPeerPlatformLinux || pi.sasEnabled) {
+      // Always offer Ctrl+Alt+Del for Windows peers (AnyDesk/Level parity) — the
+      // pi.sasEnabled gate hid it whenever the controlled side wasn't served by
+      // a SYSTEM process (e.g. at the login screen), leaving no way to send it.
+      if (pi.platform == kPeerPlatformLinux ||
+          pi.platform == kPeerPlatformWindows ||
+          pi.sasEnabled) {
         menu.add(RemoteMenuEntry.insertCtrlAltDel(sessionId, padding,
             dismissFunc: cancelFunc));
       }
