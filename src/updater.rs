@@ -117,7 +117,20 @@ fn start_auto_update_check_(rx_msg: Receiver<UpdateMsg>) {
     }
 }
 
+#[allow(unreachable_code)]
 fn check_update(manually: bool) -> ResultType<()> {
+    // Atlas: this silent updater can only APPLY an update on Windows (see the
+    // cfg-gated `update_new_version` below) — on macOS/Linux in-app updates
+    // flow through the Flutter banner / Settings → About instead, so running
+    // the body here would just re-download the release asset to the temp dir
+    // every day for nothing. With OPTION_ALLOW_AUTO_UPDATE now defaulting ON
+    // (common.rs::apply_atlas_client_defaults) that waste would hit every
+    // endpoint, so bail out early on non-Windows.
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = manually;
+        return Ok(());
+    }
     #[cfg(target_os = "windows")]
     let update_msi = crate::platform::is_msi_installed()? && !crate::is_custom_client();
     if !(manually || config::Config::get_bool_option(config::keys::OPTION_ALLOW_AUTO_UPDATE)) {

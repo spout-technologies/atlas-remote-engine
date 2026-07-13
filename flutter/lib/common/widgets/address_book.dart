@@ -22,13 +22,19 @@ import '../../common.dart';
 import 'dialog.dart';
 import 'login.dart';
 
-final hideAbTagsPanel = false.obs;
+// Atlas Remote — the tags panel is collapsed by default so the fleet reads as
+// a single, wide table; power users opt in via the Toggle Tags action. The
+// comment in _buildAddressBookLandscape always claimed "collapsed by default"
+// while this default was `false` — the default and the comment now agree. The
+// persisted preference (kOptionHideAbTagsPanel) is re-read in
+// peer_tab_page.dart (_loadLocalOptions), where an explicit 'N' (user chose to
+// show the panel) is respected.
+final hideAbTagsPanel = true.obs;
 
 // Atlas Remote — fleet toolbar design tokens (DS .ds-field / .ds-input--sm /
 // .ds-select). Card fill, border, ink-500 (placeholder/icon/count) and body
 // ink (field text) are now theme-aware via the atlas*Color(context) getters in
 // common.dart — light hex in light mode, dark surfaces/ink in dark mode.
-const String _kAllClients = '__atlas_all_clients__';
 
 class AddressBook extends StatefulWidget {
   final EdgeInsets? menuPadding;
@@ -79,11 +85,12 @@ class _AddressBookState extends State<AddressBook> {
       });
 
   Widget _buildAddressBookLandscape() {
-    // Atlas Remote — desktop fleet view: a Client/Site filter + device search
+    // Atlas Remote — desktop fleet view: a Client selector + device search
     // toolbar (net-new, MSP-scale — design annotation f-filter) sits above the
     // fleet table (AddressBookPeersView renders the Device/Client/User/Access
     // table). The tags panel remains available for power users but is collapsed
-    // by default so the fleet reads as a single, wide table.
+    // by default (hideAbTagsPanel now defaults to hidden, matching this
+    // comment) so the fleet reads as a single, wide table.
     return Row(
       children: [
         Offstage(
@@ -94,7 +101,7 @@ class _AddressBookState extends State<AddressBook> {
                   border: Border.all(
                       color: Theme.of(context).colorScheme.background)),
               child: Container(
-                width: 200,
+                width: 150,
                 height: double.infinity,
                 child: Column(
                   children: [
@@ -129,32 +136,23 @@ class _AddressBookState extends State<AddressBook> {
     );
   }
 
-  // Atlas Remote — Client/Site filter + device search toolbar for the fleet
+  // Atlas Remote — Client selector + device search toolbar for the fleet
   // table (design annotation f-filter; net-new for MSP-scale address books).
-  // The Client filter reuses the address book's existing tag mechanism as the
-  // client grouping: picking a client selects that single tag (replacing the
-  // selection) so the peer list narrows to that client; "All clients" clears
-  // the tag selection. Search drives the shared `peerSearchText` obs that
+  // On hubs with the ab-2.0 endpoints, Atlas exposes one read-only shared
+  // address book per client entity (plus "Unassigned devices"), so the Client
+  // selector is the address-book picker itself: picking a client switches the
+  // current address book (AbModel.setCurrentName pulls that book), and the
+  // choice is persisted through kOptionCurrentAbName exactly like the native
+  // selector. Search drives the shared `peerSearchText` obs that
   // `matchPeers()` already consumes, so no new filter backend is introduced.
   Widget _buildFleetToolbar() {
     return Obx(() {
-      final tags = gFFI.abModel.currentAbTags.toList();
-      if (gFFI.abModel.sortTags.value) {
-        tags.sort();
-      }
-      final selected = gFFI.abModel.selectedTags;
-      // Single-select client value: the sole selected normal tag, else 'all'.
-      final normalSelected =
-          selected.where((t) => t != kUntagged && tags.contains(t)).toList();
-      final currentClient =
-          normalSelected.length == 1 ? normalSelected.first.toString() : _kAllClients;
-
       final total = gFFI.abModel.currentAbPeers.length;
       final shown = _visibleFleetCount();
 
       return Row(
         children: [
-          _buildClientFilter(tags, currentClient),
+          _buildClientFilter(),
           const SizedBox(width: 8),
           Expanded(child: _buildFleetSearch()),
           const SizedBox(width: 12),
@@ -171,86 +169,139 @@ class _AddressBookState extends State<AddressBook> {
     });
   }
 
-  Widget _buildClientFilter(List<dynamic> tags, String currentClient) {
-    final items = <DropdownMenuItem<String>>[
-      DropdownMenuItem(
-        value: _kAllClients,
-        child: Text(
-          '${translate('All')} ${translate('clients')}',
-          style: TextStyle(
-              fontSize: 12.5,
-              fontFamily: kAtlasBodyFont,
-              color: atlasInkBody(context)),
-          overflow: TextOverflow.ellipsis,
-        ),
+  // Shared pill chrome for the Client field (DS .ds-select).
+  BoxDecoration _clientPillDecoration() => BoxDecoration(
+        color: atlasCardColor(context),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: atlasBorderColor(context), width: 1),
+      );
+
+  // Degraded Client field: a static pill showing just the current book name.
+  // Used on legacy hubs (a single legacy address book — no clients to pick
+  // between) and while the address-book list is loading or the current name
+  // is transiently not in the list (a DropdownButton2 whose value is not
+  // among its items would assert). No crash paths in either mode.
+  Widget _buildClientStatic(String text) {
+    return Container(
+      width: 200,
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      alignment: Alignment.centerLeft,
+      decoration: _clientPillDecoration(),
+      child: Text(
+        text,
+        style: TextStyle(
+            fontSize: 12.5,
+            fontFamily: kAtlasBodyFont,
+            color: atlasInkBody(context)),
+        overflow: TextOverflow.ellipsis,
       ),
-      ...tags.map((e) => DropdownMenuItem(
-            value: e.toString(),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  margin: const EdgeInsets.only(right: 8),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: gFFI.abModel.getCurrentAbTagColor(e.toString()),
-                  ),
-                ),
-                Flexible(
-                  child: Text(
-                    e.toString(),
-                    style: TextStyle(
-                        fontSize: 12.5,
-                        fontFamily: kAtlasBodyFont,
-                        color: atlasInkBody(context)),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          )),
-    ];
+    );
+  }
+
+  Widget _buildClientFilter() {
+    final abModel = gFFI.abModel;
+    final current = abModel.currentName.value;
+    if (abModel.legacyMode.value) {
+      // Old hub: degrade gracefully to the current book name as static text.
+      return _buildClientStatic(abModel.translatedName(current));
+    }
+    final names = abModel.addressBookNames();
+    if (names.isEmpty || !names.contains(current)) {
+      return _buildClientStatic(abModel.translatedName(current));
+    }
+    final personalName = abModel.personalAddressBookName();
+    // In the Atlas topology the personal address book is an intentionally
+    // empty placeholder (the hub always returns 0 peers for it) — hide it
+    // from the picker when shared client books exist, unless it is the
+    // active selection (the dropdown value must remain among the items).
+    final personalAb = abModel.addressbooks[personalName];
+    final hasShared = names.any((name) => name != personalName);
+    final hidePersonal = personalAb != null &&
+        personalAb.peers.isEmpty &&
+        hasShared &&
+        current != personalName;
+    final shown =
+        names.where((name) => !(hidePersonal && name == personalName)).toList();
+    // Personal (when shown) first, then client books alphabetically — the
+    // same ordering as the native address-book selector.
+    final hasPersonal = shown.remove(personalName);
+    shown.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    if (hasPersonal) {
+      shown.insert(0, personalName);
+    }
+    final items = shown
+        .map((name) => DropdownMenuItem<String>(
+              value: name,
+              child: Text(
+                abModel.translatedName(name),
+                style: TextStyle(
+                    fontSize: 12.5,
+                    fontFamily: kAtlasBodyFont,
+                    color: atlasInkBody(context)),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ))
+        .toList();
+    final isOptFixed = isOptionFixed(kOptionCurrentAbName);
     return Container(
       width: 200,
       height: 32,
       // DS .ds-select insets: text left 12, chevron right 10.
       padding: const EdgeInsets.only(left: 12, right: 10),
-      decoration: BoxDecoration(
-        color: atlasCardColor(context),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: atlasBorderColor(context), width: 1),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton2<String>(
-          value: currentClient,
-          isExpanded: true,
-          isDense: true,
-          items: items,
-          onChanged: (value) {
-            gFFI.abModel.selectedTags.clear();
-            if (value != null && value != _kAllClients) {
-              gFFI.abModel.selectedTags.add(value);
-            }
-          },
-          iconStyleData: IconStyleData(
-            icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-            iconEnabledColor: atlasInkMuted(context),
-          ),
-          buttonStyleData: const ButtonStyleData(
-            padding: EdgeInsets.zero,
-            height: 30,
-          ),
-          dropdownStyleData: DropdownStyleData(
-            maxHeight: 320,
-            decoration: BoxDecoration(
-              color: atlasCardColor(context),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: atlasBorderColor(context), width: 1),
+      decoration: _clientPillDecoration(),
+      child: Row(
+        children: [
+          Text(
+            translate('Client'),
+            style: TextStyle(
+              fontSize: 12,
+              fontFamily: kAtlasBodyFont,
+              color: atlasInkMuted(context),
             ),
           ),
-        ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: DropdownButtonHideUnderline(
+              child: DropdownButton2<String>(
+                value: current,
+                isExpanded: true,
+                isDense: true,
+                items: items,
+                onChanged: isOptFixed
+                    ? null
+                    : (value) {
+                        if (value == null || value == current) return;
+                        gFFI.abModel.setCurrentName(value);
+                        // Persist like the native selector so the choice is
+                        // restored by trySetCurrentToLast on relaunch (and
+                        // recognised as explicit by the post-upgrade
+                        // auto-select in AbModel).
+                        bind.setLocalFlutterOption(
+                            k: kOptionCurrentAbName, v: value);
+                      },
+                iconStyleData: IconStyleData(
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+                  iconEnabledColor: atlasInkMuted(context),
+                ),
+                buttonStyleData: const ButtonStyleData(
+                  padding: EdgeInsets.zero,
+                  height: 30,
+                ),
+                dropdownStyleData: DropdownStyleData(
+                  maxHeight: 320,
+                  width: 200,
+                  decoration: BoxDecoration(
+                    color: atlasCardColor(context),
+                    borderRadius: BorderRadius.circular(8),
+                    border:
+                        Border.all(color: atlasBorderColor(context), width: 1),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -292,8 +343,11 @@ class _AddressBookState extends State<AddressBook> {
     );
   }
 
-  // Devices visible after the active tag/client filter + search — mirrors the
-  // filtering AddressBookPeersView applies, so the "N of M" count is honest.
+  // Devices of the current address book visible after the tags-panel
+  // selection + search — mirrors the filtering AddressBookPeersView applies,
+  // so the "N of M" count is honest. (The Client selector switches the
+  // current address book itself rather than filtering by tag, so tag
+  // selections now come only from the tags panel.)
   int _visibleFleetCount() {
     final search = peerSearchText.value.trim().toLowerCase();
     return gFFI.abModel.currentAbPeers.where((p) {

@@ -124,6 +124,9 @@ class FfiModel with ChangeNotifier {
   Timer? _restartReconnectDelayTimer;
   var _reconnects = 1;
   DateTime? _offlineReconnectStartTime;
+  // One-shot guard: automatically retry via relay on the first relay-hint of a
+  // connection attempt. Reset on a new session (clear) and on connection_ready.
+  bool _relayHintAutoRetried = false;
   bool _viewOnly = false;
   bool _showMyCursor = false;
   WeakReference<FFI> parent;
@@ -253,6 +256,7 @@ class FfiModel with ChangeNotifier {
     _inputBlocked = false;
     _timer?.cancel();
     _timer = null;
+    _relayHintAutoRetried = false;
     resetRestartReconnectState();
     clearPermissions();
     waitForImageTimer?.cancel();
@@ -345,6 +349,7 @@ class FfiModel with ChangeNotifier {
       } else if (name == 'connection_ready') {
         setConnectionType(peerId, evt['secure'] == 'true',
             evt['direct'] == 'true', evt['stream_type'] ?? '');
+        _relayHintAutoRetried = false;
         resetRestartReconnectState();
       } else if (name == 'switch_display') {
         // switch display is kept for backward compatibility
@@ -958,7 +963,22 @@ class FfiModel with ChangeNotifier {
     } else if (type == 'elevation-error') {
       showElevationError(sessionId, type, title, text, dialogManager);
     } else if (type == 'relay-hint' || type == 'relay-hint2') {
-      showRelayHintDialog(sessionId, type, title, text, dialogManager, peerId);
+      // CGNAT endpoints: the punch handshake can stall; retry once via relay
+      // automatically (same action as the dialog's "Connect via relay" button)
+      // before surfacing the dialog.
+      if (!_relayHintAutoRetried) {
+        _relayHintAutoRetried = true;
+        BotToast.showText(
+          text: translate('Connection stalled — retrying via relay…'),
+          duration: Duration(seconds: 3),
+          clickClose: true,
+          onlyOne: true,
+        );
+        reconnect(dialogManager, sessionId, true);
+      } else {
+        showRelayHintDialog(
+            sessionId, type, title, text, dialogManager, peerId);
+      }
     } else if (text == kMsgboxTextWaitingForImage) {
       showConnectedWaitingForImage(dialogManager, sessionId, type, title, text);
     } else if (title == 'Privacy mode') {

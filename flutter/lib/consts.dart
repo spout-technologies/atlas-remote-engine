@@ -168,6 +168,11 @@ const String kOptionEnableConfirmClosingTabs = "enable-confirm-closing-tabs";
 const String kOptionAllowAlwaysSoftwareRender = "allow-always-software-render";
 const String kOptionEnableCheckUpdate = "enable-check-update";
 const String kOptionAllowAutoUpdate = "allow-auto-update";
+// Atlas: local (per-user) flag for the Settings → About Diagnostics block.
+// When "Y", main.dart tees debugPrint output into <log dir>/flutter.log at
+// startup. Read/written with the explicit == 'Y' pattern (a bare key would
+// default true through option2bool).
+const String kOptionDiagnosticsMode = "diagnostics-mode";
 const String kOptionAllowLinuxHeadless = "allow-linux-headless";
 const String kOptionAllowRemoveWallpaper = "allow-remove-wallpaper";
 const String kOptionStopService = "stop-service";
@@ -705,3 +710,9 @@ extension WindowsTargetExt on int {
 }
 
 const kCheckSoftwareUpdateFinish = 'check_software_update_finish';
+// Atlas: completion event for the on-demand Settings → About update check
+// (bind.mainCheckForUpdate → common.rs::check_software_update_manual). Fires
+// on EVERY outcome — evt['url'] non-empty when an update exists, empty when
+// already latest; evt['error'] non-empty when the check failed — unlike
+// kCheckSoftwareUpdateFinish, which only fires when an update is found.
+const kCheckSoftwareUpdateManualFinish = 'check_software_update_manual_finish';

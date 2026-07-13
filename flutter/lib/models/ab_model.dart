@@ -185,10 +185,21 @@ class AbModel {
           listInitialized = true;
           trySetCurrentToLast();
         }
+        // Atlas Remote — remember whether the current book came from the
+        // default fallback below (saved name absent or no longer present)
+        // rather than from an explicit, persisted selection restored above:
+        // only the fallback path may trigger the post-upgrade auto-select.
+        bool currentFromFallback = false;
         if (!addressbooks.containsKey(_currentName.value)) {
-          setCurrentName(legacyMode.value
+          // Awaited so the fallback book (the personal one in non-legacy
+          // mode) is fully pulled before _autoSelectFirstSharedAb inspects
+          // its peers — BaseAb.pullAb has a re-entrancy guard (abPulling)
+          // that would otherwise turn the pull below into a silent no-op
+          // while this pull is still in flight.
+          await setCurrentName(legacyMode.value
               ? _legacyAddressBookName
               : _personalAddressBookName);
+          currentFromFallback = true;
         }
         // pull current address book
         await current.pullAb(quiet: quiet);
@@ -198,6 +209,10 @@ class AbModel {
           if (personalAb != null && !personalAb.initialized) {
             await personalAb.pullAb(quiet: quiet);
           }
+        }
+        // Single-shot per pull, fallback path only.
+        if (currentFromFallback) {
+          await _autoSelectFirstSharedAb();
         }
       } catch (e) {
         debugPrint("pull ab list error: $e");
@@ -215,6 +230,37 @@ class AbModel {
     if (listInitialized && current.initialized) {
       _saveCache();
     }
+  }
+
+  /// Atlas Remote — post-upgrade auto-select for hubs gaining the ab-2.0
+  /// endpoints. The Atlas hub exposes one read-only shared address book per
+  /// client entity (plus "Unassigned devices") and keeps the personal address
+  /// book as an intentionally empty placeholder (it always returns 0 peers).
+  /// When the current book landed on that empty personal book via the
+  /// fallback in `_pullAb` (saved kOptionCurrentAbName absent or stale —
+  /// e.g. a fielded engine that just exited legacy mode), move to the first
+  /// shared book (sorted case-insensitively, matching the selector order) so
+  /// the operator lands on a useful client book instead of an empty screen.
+  ///
+  /// Guard rails: called at most once per pull and only on the fallback path,
+  /// so an explicit selection — persisted by the selectors via
+  /// kOptionCurrentAbName and restored by `trySetCurrentToLast` — is never
+  /// overridden; a server-fixed kOptionCurrentAbName is respected; an
+  /// uninitialized (failed) pull never counts as "zero peers"; and switching
+  /// to a shared book falsifies `current.isPersonal()`, so it cannot re-fire
+  /// or loop.
+  Future<void> _autoSelectFirstSharedAb() async {
+    if (legacyMode.value) return;
+    if (isOptionFixed(kOptionCurrentAbName)) return;
+    if (!current.isPersonal()) return;
+    if (!current.initialized || current.peers.isNotEmpty) return;
+    final sharedNames = addressbooks.keys
+        .where((name) => name != _personalAddressBookName)
+        .toList();
+    if (sharedNames.isEmpty) return;
+    sharedNames.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    debugPrint('auto-select first shared address book: ${sharedNames.first}');
+    await setCurrentName(sharedNames.first);
   }
 
   void _setListPullError(Object err, {required bool quiet, int? statusCode}) {

@@ -12,6 +12,7 @@ import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_home_page.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_tab_page.dart';
 import 'package:flutter_hbb/desktop/widgets/remote_toolbar.dart';
+import 'package:flutter_hbb/desktop/widgets/update_progress.dart';
 import 'package:flutter_hbb/mobile/widgets/dialog.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:flutter_hbb/models/printer_model.dart';
@@ -20,6 +21,7 @@ import 'package:flutter_hbb/models/state_model.dart';
 import 'package:flutter_hbb/plugin/manager.dart';
 import 'package:flutter_hbb/plugin/widgets/desktop_settings.dart';
 import 'package:get/get.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:url_launcher/url_launcher_string.dart';
@@ -2668,25 +2670,306 @@ class _AboutState extends State<_About> {
 
       return SingleChildScrollView(
         controller: scrollController,
-        child: _Card(context, title: translate('About Atlas Remote'), children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              brand,
-              agplCard,
-              Text(
-                '© ${DateTime.now().toString().substring(0, 4)} Spout Technologies (Pty) Ltd. All rights reserved.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontFamily: kAtlasBodyFont,
-                    fontSize: 11,
-                    color: _kAtlasInkLabel(context)),
-              ).marginOnly(top: 16),
-            ],
-          ).marginOnly(left: _kContentHMargin)
-        ]),
+        child: Column(
+          children: [
+            _Card(context, title: translate('About Atlas Remote'), children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  brand,
+                  agplCard,
+                  Text(
+                    '© ${DateTime.now().toString().substring(0, 4)} Spout Technologies (Pty) Ltd. All rights reserved.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        fontFamily: kAtlasBodyFont,
+                        fontSize: 11,
+                        color: _kAtlasInkLabel(context)),
+                  ).marginOnly(top: 16),
+                ],
+              ).marginOnly(left: _kContentHMargin)
+            ]),
+            // Atlas: first-class update + diagnostics surfaces. Desktop only —
+            // the web client has no updater or local log directory.
+            if (!isWeb)
+              _Card(context, title: translate('Updates'), children: [
+                _AboutUpdates(version: version)
+                    .marginOnly(left: _kContentHMargin, top: 4, bottom: 8)
+              ]),
+            if (!isWeb)
+              _Card(context, title: translate('Diagnostics'), children: [
+                _AboutDiagnostics(version: version)
+                    .marginOnly(left: _kContentHMargin, top: 4, bottom: 8)
+              ]),
+          ],
+        ),
       );
     });
+  }
+}
+
+// Atlas: Settings → About "Updates" block. Shows the current version and an
+// on-demand "Check for updates" that drives the SAME check the home banner
+// uses (bind.mainCheckForUpdate → common.rs::check_software_update_manual →
+// do_check_software_update): a found update lands in stateGlobal.updateUrl via
+// kCheckSoftwareUpdateFinish exactly as if the startup check had found it, and
+// the kCheckSoftwareUpdateManualFinish completion event additionally reports
+// the "already latest" / failure outcomes the passive channel never emits.
+// The Install action mirrors the banner: handleUpdate() on macOS / installed
+// Windows, the public download page otherwise.
+class _AboutUpdates extends StatefulWidget {
+  final String version;
+  const _AboutUpdates({Key? key, required this.version}) : super(key: key);
+
+  @override
+  State<_AboutUpdates> createState() => _AboutUpdatesState();
+}
+
+class _AboutUpdatesState extends State<_AboutUpdates> {
+  static const String _kEventHandlerName = 'about_updates';
+  final RxBool _checking = false.obs;
+  final RxBool _checkedOnce = false.obs;
+  final RxString _error = ''.obs;
+
+  @override
+  void initState() {
+    super.initState();
+    platformFFI.registerEventHandler(
+        kCheckSoftwareUpdateManualFinish, _kEventHandlerName,
+        (Map<String, dynamic> evt) async {
+      _checking.value = false;
+      _checkedOnce.value = true;
+      _error.value = (evt['error'] ?? '').toString();
+      // Keep the shared banner state consistent: a non-empty url was already
+      // pushed through kCheckSoftwareUpdateFinish on the Rust side; an empty
+      // one clears a banner left over from a since-rolled-back release.
+      stateGlobal.updateUrl.value = (evt['url'] ?? '').toString();
+    }, replace: true);
+  }
+
+  @override
+  void dispose() {
+    platformFFI.unregisterEventHandler(
+        kCheckSoftwareUpdateManualFinish, _kEventHandlerName);
+    super.dispose();
+  }
+
+  void _check() {
+    if (_checking.value) return;
+    _error.value = '';
+    _checking.value = true;
+    bind.mainCheckForUpdate();
+    // Never leave the row stuck on "checking" if the completion event is
+    // lost (e.g. the engine restarts mid-check).
+    Future.delayed(const Duration(seconds: 30), () {
+      if (_checking.value) {
+        _checking.value = false;
+        _checkedOnce.value = true;
+        _error.value = 'timeout';
+      }
+    });
+  }
+
+  String _availableVersion(String updateUrl) {
+    // The hub returns a direct asset URL (…/AtlasRemote-1.5.21-x86_64.dmg);
+    // show a clean version number, not the filename.
+    final m = RegExp(r'\d+(\.\d+)+').firstMatch(updateUrl.split('/').last);
+    return m?.group(0) ?? bind.mainGetNewVersion();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Obx(() {
+      final checking = _checking.value;
+      final err = _error.value;
+      final updateUrl = stateGlobal.updateUrl.value;
+      final hasUpdate = updateUrl.isNotEmpty;
+      // Same install gate as the home banner (buildHelpCards).
+      final isToUpdate = isMacOS || (isWindows && bind.mainIsInstalled());
+
+      Widget status;
+      if (checking) {
+        status = Row(children: [
+          const SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(strokeWidth: 2)),
+          Text(translate('Checking for updates ...'),
+                  style: TextStyle(
+                      fontSize: 13, color: _kAtlasInkSecondary(context)))
+              .marginOnly(left: 8),
+        ]);
+      } else if (hasUpdate) {
+        status = Text(
+          '${translate('New version available')}: v${_availableVersion(updateUrl)}',
+          style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: _kAtlasAccentDark(context)),
+        );
+      } else if (err.isNotEmpty) {
+        status = Text(
+          '${translate('Update check failed')} ($err)',
+          style: TextStyle(
+              fontSize: 13, color: Theme.of(context).colorScheme.error),
+        );
+      } else if (_checkedOnce.value) {
+        status = Text(
+          "${translate("You're on the latest version")} (v${widget.version})",
+          style: TextStyle(fontSize: 13, color: _kAtlasInkSecondary(context)),
+        );
+      } else {
+        status = const SizedBox.shrink();
+      }
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '${translate('Version')}: ${widget.version}',
+            style: TextStyle(
+                fontFamily: kAtlasMonoFont,
+                fontSize: 12,
+                color: _kAtlasInkBody(context)),
+          ),
+          status.marginOnly(top: 10),
+          Row(children: [
+            ElevatedButton(
+              onPressed: checking ? null : _check,
+              child: Text(translate('Check for updates'))
+                  .marginSymmetric(horizontal: 15),
+            ),
+            if (hasUpdate && !checking)
+              ElevatedButton(
+                onPressed: () {
+                  if (isToUpdate) {
+                    handleUpdate(updateUrl);
+                  } else {
+                    launchUrlString('https://atlasos.work/download');
+                  }
+                },
+                child: Text(translate(isToUpdate ? 'Update' : 'Download'))
+                    .marginSymmetric(horizontal: 15),
+              ).marginOnly(left: 10),
+          ]).marginOnly(top: 10),
+        ],
+      );
+    });
+  }
+}
+
+// Atlas: Settings → About "Diagnostics" block. The toggle persists a LOCAL
+// option (kOptionDiagnosticsMode); main.dart reads it at startup and tees
+// debugPrint into <log dir>/flutter.log while it is on. It uses the explicit
+// == 'Y' getter/setter pattern because a bare key would default TRUE through
+// option2bool. "Open log folder" / "Export diagnostics" work regardless of
+// the toggle — engine logs (flexi_logger) are always written.
+class _AboutDiagnostics extends StatefulWidget {
+  final String version;
+  const _AboutDiagnostics({Key? key, required this.version}) : super(key: key);
+
+  @override
+  State<_AboutDiagnostics> createState() => _AboutDiagnosticsState();
+}
+
+class _AboutDiagnosticsState extends State<_AboutDiagnostics> {
+  Future<void> _openFolder(String path) async {
+    if (path.isEmpty) return;
+    try {
+      if (Platform.isWindows) {
+        await Process.run('explorer', [path]);
+      } else if (Platform.isMacOS) {
+        await Process.run('open', [path]);
+      } else {
+        await Process.run('xdg-open', [path]);
+      }
+    } catch (e) {
+      showToast('$e');
+    }
+  }
+
+  Future<void> _exportDiagnostics() async {
+    try {
+      final logDirPath = bind.mainGetLogPath();
+      final dir = Directory(logDirPath);
+      if (logDirPath.isEmpty || !await dir.exists()) {
+        showToast(translate('No log files found'));
+        return;
+      }
+      final logs = <File>[];
+      await for (final entry in dir.list()) {
+        if (entry is File && entry.path.toLowerCase().endsWith('.log')) {
+          logs.add(entry);
+        }
+      }
+      if (logs.isEmpty) {
+        showToast(translate('No log files found'));
+        return;
+      }
+      logs.sort(
+          (a, b) => b.statSync().modified.compareTo(a.statSync().modified));
+      final downloads = await getDownloadsDirectory();
+      if (downloads == null) {
+        showToast(translate('Could not locate the Downloads folder'));
+        return;
+      }
+      final now = DateTime.now();
+      String two(int n) => n.toString().padLeft(2, '0');
+      final stamp =
+          '${now.year}${two(now.month)}${two(now.day)}-${two(now.hour)}${two(now.minute)}${two(now.second)}';
+      final base = 'atlas-remote-diagnostics-${widget.version}-$stamp';
+      final sep = Platform.pathSeparator;
+      // Newest engine log; the Flutter-side tee (if enabled) rides along
+      // under its own suffix. No archive dependency in pubspec, so v1 copies
+      // plain files rather than bundling a zip.
+      final newest = logs.firstWhere((f) => !f.path.endsWith('flutter.log'),
+          orElse: () => logs.first);
+      await newest.copy('${downloads.path}$sep$base.log');
+      final flutterLog = File('$logDirPath${sep}flutter.log');
+      if (await flutterLog.exists()) {
+        await flutterLog.copy('${downloads.path}$sep$base-flutter.log');
+      }
+      showToast('${translate('Exported to')} ${downloads.path}');
+      await _openFolder(downloads.path);
+    } catch (e) {
+      showToast('$e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _OptionCheckBox(
+          context,
+          'Diagnostics mode',
+          kOptionDiagnosticsMode,
+          isServer: false,
+          optGetter: () =>
+              bind.mainGetLocalOption(key: kOptionDiagnosticsMode) == 'Y',
+          optSetter: (k, v) async =>
+              await bind.mainSetLocalOption(key: k, value: v ? 'Y' : 'N'),
+        ),
+        Text(
+          translate(
+              'Also captures app-side logs to flutter.log. Takes effect after restart.'),
+          style: TextStyle(fontSize: 12, color: _kAtlasInkLabel(context)),
+        ).marginOnly(left: _kCheckBoxLeftMargin + 30, top: 2),
+        Row(children: [
+          ElevatedButton(
+            onPressed: () => _openFolder(bind.mainGetLogPath()),
+            child: Text(translate('Open log folder'))
+                .marginSymmetric(horizontal: 15),
+          ),
+          ElevatedButton(
+            onPressed: _exportDiagnostics,
+            child: Text(translate('Export diagnostics'))
+                .marginSymmetric(horizontal: 15),
+          ).marginOnly(left: 10),
+        ]).marginOnly(top: 12),
+      ],
+    );
   }
 }
 

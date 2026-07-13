@@ -130,6 +130,7 @@ Future<void> main(List<String> args) async {
 Future<void> initEnv(String appType) async {
   // global shared preference
   await platformFFI.init(appType);
+  _maybeTeeDebugPrintsToFile(appType);
   // global FFI, use this **ONLY** for global configuration
   // for convenience, use global FFI on mobile platform
   // focus on multi-ffi on desktop first
@@ -138,6 +139,36 @@ Future<void> initEnv(String appType) async {
   _registerEventHandler();
   // Update the system theme.
   updateSystemWindowTheme();
+}
+
+/// Atlas: when diagnostics mode (Settings → About) is on at startup, tee
+/// debugPrint output into <log dir>/flutter.log so Flutter-side prints survive
+/// in release builds, where a windowed app's stdout goes nowhere. Opt-in via
+/// the local kOptionDiagnosticsMode == 'Y', read once per process; appends
+/// with a simple 5 MB truncate guard. Failures are swallowed — diagnostics
+/// must never take the app down.
+void _maybeTeeDebugPrintsToFile(String appType) {
+  if (isWeb) return;
+  try {
+    if (bind.mainGetLocalOption(key: kOptionDiagnosticsMode) != 'Y') return;
+    final dir = bind.mainGetLogPath();
+    if (dir.isEmpty) return;
+    final file = File('$dir${Platform.pathSeparator}flutter.log');
+    file.parent.createSync(recursive: true);
+    final original = debugPrint;
+    debugPrint = (String? message, {int? wrapWidth}) {
+      original(message, wrapWidth: wrapWidth);
+      if (message == null) return;
+      try {
+        if (file.existsSync() && file.lengthSync() > 5 * 1024 * 1024) {
+          file.writeAsStringSync('');
+        }
+        file.writeAsStringSync('${DateTime.now().toIso8601String()} $message\n',
+            mode: FileMode.append);
+      } catch (_) {}
+    };
+    debugPrint('[diagnostics] flutter.log capture enabled ($appType)');
+  } catch (_) {}
 }
 
 void runMainApp(bool startService) async {

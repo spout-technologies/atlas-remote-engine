@@ -951,6 +951,36 @@ pub fn check_software_update() {
     }
 }
 
+/// Atlas: on-demand update check for the Settings → About "Check for updates"
+/// button (`main_check_for_update` FFI). Unlike `check_software_update()` this
+/// is NOT gated on OPTION_ENABLE_CHECK_UPDATE — the user explicitly asked —
+/// and it always pushes a `check_software_update_manual_finish` event when the
+/// check completes, including the up-to-date and error cases, so the UI can
+/// show "you're on the latest version" instead of only reacting when an update
+/// exists. A found update still flows through the same
+/// `check_software_update_finish` event + SOFTWARE_UPDATE_URL state the home
+/// banner reads (pushed inside `do_check_software_update`), so both surfaces
+/// stay consistent.
+pub fn check_software_update_manual() {
+    std::thread::spawn(move || {
+        let _err = match do_check_software_update() {
+            Ok(()) => String::new(),
+            Err(e) => e.to_string(),
+        };
+        #[cfg(feature = "flutter")]
+        {
+            let url = SOFTWARE_UPDATE_URL.lock().unwrap().clone();
+            let mut m = HashMap::new();
+            m.insert("name", "check_software_update_manual_finish");
+            m.insert("url", &url);
+            m.insert("error", &_err);
+            if let Ok(data) = serde_json::to_string(&m) {
+                let _ = crate::flutter::push_global_event(crate::flutter::APP_TYPE_MAIN, data);
+            }
+        }
+    });
+}
+
 // No need to check `danger_accept_invalid_cert` for now.
 // Because the url is always `https://api.rustdesk.com/version/latest`.
 #[tokio::main(flavor = "current_thread")]
@@ -983,7 +1013,7 @@ pub async fn do_check_software_update() -> hbb_common::ResultType<()> {
     let bytes = latest_release_response.bytes().await?;
     let resp: hbb_common::VersionCheckResponse = serde_json::from_slice(&bytes)?;
     let response_url = resp.url;
-    let latest_release_version = response_url.rsplit('/').next().unwrap_or_default();
+    let latest_release_version = extract_version_from_release_url(&response_url);
 
     if get_version_number(&latest_release_version) > get_version_number(crate::VERSION) {
         #[cfg(feature = "flutter")]
@@ -1000,6 +1030,36 @@ pub async fn do_check_software_update() -> hbb_common::ResultType<()> {
         *SOFTWARE_UPDATE_URL.lock().unwrap() = "".to_string();
     }
     Ok(())
+}
+
+/// Atlas: pull the dotted-numeric version out of a release URL.
+///
+/// The stock flow assumed the update URL ends in a bare version tag
+/// (`…/releases/tag/1.2.3`) and compared `rsplit('/').next()` directly. The
+/// Atlas hub's engine-version endpoint instead returns the FULL direct asset
+/// URL (`…/releases/download/v1.5.20/AtlasRemote-1.5.20-x86_64.dmg`), whose
+/// last segment is a filename — `get_version_number("AtlasRemote-…")` is 0, so
+/// the "newer version?" comparison could never trip and neither the home
+/// banner nor the silent updater ever fired. Scan the last path segment's
+/// `-`-separated parts for the first dotted-numeric run (tolerating a leading
+/// `v` and a trailing extension) and fall back to the stock behaviour (the raw
+/// last segment) for bare-tag URLs.
+fn extract_version_from_release_url(url: &str) -> String {
+    let seg = url.rsplit('/').next().unwrap_or_default();
+    for part in seg.split('-') {
+        let candidate = part
+            .strip_prefix('v')
+            .or_else(|| part.strip_prefix('V'))
+            .unwrap_or(part);
+        let nums: Vec<&str> = candidate
+            .split('.')
+            .take_while(|x| !x.is_empty() && x.chars().all(|c| c.is_ascii_digit()))
+            .collect();
+        if nums.len() >= 2 {
+            return nums.join(".");
+        }
+    }
+    seg.to_string()
 }
 
 #[inline]
@@ -2178,8 +2238,28 @@ fn apply_atlas_client_defaults() {
     // still overrides.
     {
         let mut server = config::DEFAULT_SETTINGS.write().unwrap();
-        for (k, v) in [("allow-remote-config-modification", "Y")] {
+        for (k, v) in [
+            ("allow-remote-config-modification", "Y"),
+            // In-app updates default ON: `allow-` options are false unless
+            // explicitly "Y" (config::option2bool), so without this seed the
+            // silent updater (updater.rs::check_update, gated on
+            // OPTION_ALLOW_AUTO_UPDATE) never runs on a fresh install. Written
+            // as a *default*: a user's stored value or OVERWRITE_SETTINGS
+            // still wins (Config::get_option resolution order).
+            (keys::OPTION_ALLOW_AUTO_UPDATE, "Y"),
+        ] {
             server.entry(k.to_owned()).or_insert_with(|| v.to_owned());
+        }
+    }
+    // DEFAULT_LOCAL_SETTINGS — per-user options read by LocalConfig::get_option.
+    // `enable-check-update` already resolves true when unset (`enable-` options
+    // are true unless "N"), but seed it explicitly so raw readers of the option
+    // (e.g. settings UI state) see a coherent "Y" default. A user's stored "N"
+    // (explicit disable) or OVERWRITE_LOCAL_SETTINGS still wins.
+    {
+        let mut local = config::DEFAULT_LOCAL_SETTINGS.write().unwrap();
+        for (k, v) in [(keys::OPTION_ENABLE_CHECK_UPDATE, "Y")] {
+            local.entry(k.to_owned()).or_insert_with(|| v.to_owned());
         }
     }
 }

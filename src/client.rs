@@ -3765,10 +3765,13 @@ pub trait Interface: Send + Clone + 'static + Sized {
         // force relay
         let errno = errno::errno().0;
         log::error!("Connection closed: {err}({errno})");
-        if direct == Some(true)
-            && ((cfg!(windows) && (errno == 10054 || err.contains("10054")))
-                || (!cfg!(windows) && (errno == 104 || err.contains("104")))
-                || (!err.contains("Failed") && err.contains("deadline")))
+        // CGNAT endpoints: the rendezvous-path punch handshake can stall (secure_tcp deadline while `direct` is still None); relay retry is the recovery, so hint regardless of `direct`.
+        let secure_tcp_deadline = err.contains("Failed to secure tcp") && err.contains("deadline");
+        if secure_tcp_deadline
+            || (direct == Some(true)
+                && ((cfg!(windows) && (errno == 10054 || err.contains("10054")))
+                    || (!cfg!(windows) && (errno == 104 || err.contains("104")))
+                    || (!err.contains("Failed") && err.contains("deadline"))))
         // deadline: https://github.com/rustdesk/rustdesk-server-pro/discussions/325, most likely comes from secure tcp timeout
         {
             relay_hint = true;

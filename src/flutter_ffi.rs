@@ -1751,6 +1751,23 @@ pub fn main_get_software_update_url() {
     crate::common::check_software_update();
 }
 
+/// Atlas: on-demand update check for Settings → About. Not gated on
+/// OPTION_ENABLE_CHECK_UPDATE (the user explicitly asked). Completion is
+/// reported via the `check_software_update_manual_finish` global event —
+/// including the "already latest" and error cases — while a found update also
+/// updates SOFTWARE_UPDATE_URL + fires `check_software_update_finish`, the
+/// same channel the home-page banner reads.
+pub fn main_check_for_update() {
+    crate::common::check_software_update_manual();
+}
+
+/// Atlas: absolute path of the engine log directory (flexi_logger target),
+/// for the Settings → About Diagnostics block ("Open log folder" / "Export
+/// diagnostics") and the Flutter-side `flutter.log` tee.
+pub fn main_get_log_path() -> SyncReturn<String> {
+    SyncReturn(config::Config::log_path().to_string_lossy().to_string())
+}
+
 pub fn main_get_home_dir() -> String {
     fs::get_home_as_string()
 }

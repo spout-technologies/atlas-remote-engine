@@ -84,8 +84,12 @@ class _PeerTabPageState extends State<PeerTabPage>
               ? PeerUiType.tile
               : PeerUiType.list;
     }
+    // Atlas Remote — the tags panel is hidden by default: unset ('') and the
+    // legacy 'Y' both mean hidden; only an explicit 'N' (the user pressed
+    // Toggle Tags to show the panel) reveals it. See hideAbTagsPanel in
+    // address_book.dart for the matching default.
     hideAbTagsPanel.value =
-        bind.mainGetLocalOption(key: kOptionHideAbTagsPanel) == 'Y';
+        bind.mainGetLocalOption(key: kOptionHideAbTagsPanel) != 'N';
   }
 
   Future<void> handleTabSelection(int tabIndex) async {
@@ -174,9 +178,8 @@ class _PeerTabPageState extends State<PeerTabPage>
                 // and kill the whole strip.
                 final hovered = hover.value;
                 final bg = selected ? cardWhite : Colors.transparent;
-                final fg = selected
-                    ? inkActive
-                    : (hovered ? inkHover : inkMuted);
+                final fg =
+                    selected ? inkActive : (hovered ? inkHover : inkMuted);
                 return Tooltip(
                   preferBelow: false,
                   message: model.tabTooltip(t),
@@ -591,9 +594,13 @@ class _PeerTabPageState extends State<PeerTabPage>
           size: 18,
         ),
         onTap: () async {
+          // Atlas Remote — store an explicit 'N' when showing the panel:
+          // defaultOptionNo is '' on non-custom builds, which reads back as
+          // "never set" and would fall into the hidden-by-default state in
+          // _loadLocalOptions.
           await bind.mainSetLocalOption(
               key: kOptionHideAbTagsPanel,
-              value: hideAbTagsPanel.value ? defaultOptionNo : "Y");
+              value: hideAbTagsPanel.value ? 'N' : 'Y');
           hideAbTagsPanel.value = !hideAbTagsPanel.value;
         });
   }

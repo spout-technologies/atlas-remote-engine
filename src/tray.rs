@@ -65,10 +65,19 @@ fn make_tray() -> hbb_common::ResultType<()> {
         None
     };
     let open_i = MenuItem::new(translate("Open".to_owned()), true, None);
+    // Atlas: "Check for updates" from the tray. The tray runs in its own
+    // process (no Flutter engine / no updater thread), so it cannot run the
+    // check and surface the result itself — instead it opens/fronts the main
+    // window (same action as "Open"), where the startup check runs
+    // (common.dart::checkUpdate) and Settings → About hosts the on-demand
+    // "Check for updates" button.
+    let check_update_i = MenuItem::new(translate("Check for updates".to_owned()), true, None);
     if let Some(quit_i) = &quit_i {
-        tray_menu.append_items(&[&open_i, quit_i]).ok();
+        tray_menu
+            .append_items(&[&open_i, &check_update_i, quit_i])
+            .ok();
     } else {
-        tray_menu.append_items(&[&open_i]).ok();
+        tray_menu.append_items(&[&open_i, &check_update_i]).ok();
     }
     let tooltip = |count: usize| {
         if count == 0 {
@@ -179,10 +188,10 @@ fn make_tray() -> hbb_common::ResultType<()> {
                     if !crate::platform::uninstall_service(false, false) {
                         *control_flow = ControlFlow::Exit;
                     }
-                } else if event.id == open_i.id() {
+                } else if event.id == open_i.id() || event.id == check_update_i.id() {
                     open_func();
                 }
-            } else if event.id == open_i.id() {
+            } else if event.id == open_i.id() || event.id == check_update_i.id() {
                 open_func();
             }
         }
