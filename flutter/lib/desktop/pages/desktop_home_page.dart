@@ -690,12 +690,15 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   }
 
   Widget buildHelpCards(String updateUrl) {
-    // Atlas: surface the in-app update banner on macOS. The stock gate (below:
-    // non-custom client + a rustdesk:// URI prefix) excludes our rebranded
-    // fork, and macOS otherwise has no update path at all. Windows keeps its
-    // existing Rust auto-updater and is intentionally left untouched here.
-    final atlasMacUpdate = isMacOS && updateUrl.isNotEmpty && !isCardClosed;
-    if (atlasMacUpdate ||
+    // Atlas: surface the in-app update banner on BOTH macOS and Windows for the
+    // rebranded custom client. The stock gate (below: non-custom client + a
+    // rustdesk:// URI prefix) excludes our fork on every platform — which left
+    // WINDOWS with no working in-app update at all (isCustomClient() is true and
+    // our prefix is atlasremote://, so the banner never rendered). isToUpdate
+    // below still routes Windows through handleUpdate → the direct-asset
+    // installer URL the hub returns (…-windows-setup.exe).
+    final atlasUpdate = (isMacOS || isWindows) && updateUrl.isNotEmpty && !isCardClosed;
+    if (atlasUpdate ||
         (!bind.isCustomClient() &&
             updateUrl.isNotEmpty &&
             !isCardClosed &&

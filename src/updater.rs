@@ -135,7 +135,15 @@ fn check_update(manually: bool) -> ResultType<()> {
         let download_url = update_url.replace("tag", "download");
         let version = download_url.split('/').last().unwrap_or_default();
         #[cfg(target_os = "windows")]
-        let download_url = if cfg!(feature = "flutter") {
+        let download_url = if download_url.ends_with(".exe") || download_url.ends_with(".msi") {
+            // Atlas: the hub's engine-version endpoint already returns the FULL
+            // direct asset URL (…-windows-setup.exe), so the legacy
+            // `rustdesk-<ver>-x86_64.exe` reconstruction below would 404 for our
+            // `AtlasRemote-*` assets. When the URL is already a concrete installer,
+            // use it verbatim — mirrors the Flutter update_progress.dart
+            // direct-asset check that the macOS path relies on.
+            download_url
+        } else if cfg!(feature = "flutter") {
             format!(
                 "{}/rustdesk-{}-x86_64.{}",
                 download_url,

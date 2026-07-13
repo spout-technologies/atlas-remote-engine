@@ -1016,21 +1016,43 @@ fn parse_atlas_headless(args: &[String]) -> Option<AtlasHeadlessArgs> {
 /// hub's `atlasremote://` URI. This never stands up an outgoing viewer.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 fn run_atlas_headless(a: AtlasHeadlessArgs) -> Option<Vec<String>> {
-    // The one-time session ticket/grant is the only secret and arrives on STDIN,
-    // never argv (contract with engine.go). Read + hold it; validating/consuming
-    // the grant is deferred to the consent task (spec §5 scopes this entry to
-    // mode + relay + session-target only). NEVER log the ticket value itself.
-    let ticket = {
-        let mut s = String::new();
-        let _ = std::io::stdin().read_line(&mut s);
-        s.trim().to_string()
+    // Two secrets arrive on STDIN, never argv (contract with engine.go):
+    //   line 1 = the one-time session ticket/grant (validating/consuming it is
+    //            deferred to the consent task, spec §5).
+    //   line 2 = the one-time connect OTP (S2/S3) the agent got from the hub;
+    //            provisioned below as this process's connect password so a
+    //            hub-authorised operator is admitted without a local Accept.
+    // NEVER log either value. An absent line 2 (old hub / no OTP) is normal.
+    let (ticket, otp) = {
+        let mut t = String::new();
+        let _ = std::io::stdin().read_line(&mut t);
+        let mut o = String::new();
+        let _ = std::io::stdin().read_line(&mut o);
+        (t.trim().to_string(), o.trim().to_string())
     };
     log::info!(
-        "atlas headless: starting controlled server (mode={:?}, session_target={:?}, ticket={})",
+        "atlas headless: starting controlled server (mode={:?}, session_target={:?}, ticket={}, otp={})",
         a.mode.as_deref(),
         a.session_target.as_deref(),
-        if ticket.is_empty() { "absent" } else { "present" }
+        if ticket.is_empty() { "absent" } else { "present" },
+        if otp.is_empty() { "absent" } else { "present" }
     );
+
+    // Per-session connect authorization (S3, closes the D5 double-gate). When the
+    // agent supplied a one-time OTP, provision it as THIS process's permanent
+    // password and switch to `password` approve-mode, so an operator whose connect
+    // URI carries `?password=<otp>` is admitted straight away — no on-endpoint
+    // Accept prompt (which is exactly what made unattended sessions still prompt).
+    // The secret is PROCESS-SCOPED: it only lives in this headless server's config
+    // for the life of the process and rotates every session, so this is NOT the
+    // static permanent-password model — it is a per-session credential. Empty OTP
+    // → leave the stock approve-mode untouched (no behaviour change / version skew).
+    if !otp.is_empty() {
+        config::Config::set_permanent_password(&otp);
+        crate::ui_interface::set_option("verification-method".into(), "use-permanent-password".into());
+        crate::ui_interface::set_option("approve-mode".into(), "password".into());
+        log::info!("atlas headless: per-session connect OTP provisioned (password approve-mode)");
+    }
 
     // Relay config — confirm-or-override the build-baked Atlas relay (PREFLIGHT §3;
     // RS_PUB_KEY is baked, so these are usually confirmatory).
