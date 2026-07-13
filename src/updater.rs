@@ -141,8 +141,9 @@ fn check_update(manually: bool) -> ResultType<()> {
             // `rustdesk-<ver>-x86_64.exe` reconstruction below would 404 for our
             // `AtlasRemote-*` assets. When the URL is already a concrete installer,
             // use it verbatim — mirrors the Flutter update_progress.dart
-            // direct-asset check that the macOS path relies on.
-            download_url
+            // direct-asset check that the macOS path relies on. Clone rather than
+            // move: `version` above still borrows the outer `download_url`.
+            download_url.clone()
         } else if cfg!(feature = "flutter") {
             format!(
                 "{}/rustdesk-{}-x86_64.{}",
