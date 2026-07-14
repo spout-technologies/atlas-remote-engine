@@ -78,10 +78,17 @@ class ConnectionType {
   final Rx<String> _secure = kInvalidValueStr.obs;
   final Rx<String> _direct = kInvalidValueStr.obs;
   final Rx<String> _stream_type = kInvalidValueStr.obs;
+  // Which nodes the established session actually used. Empty = unknown/not
+  // applicable (a direct connection has no relay). Display-only: an automatic
+  // routing choice a technician cannot see is one they cannot correct.
+  final RxString _relayServer = ''.obs;
+  final RxString _rendezvousServer = ''.obs;
 
   Rx<String> get secure => _secure;
   Rx<String> get direct => _direct;
   Rx<String> get stream_type => _stream_type;
+  RxString get relayServer => _relayServer;
+  RxString get rendezvousServer => _rendezvousServer;
 
   static String get strSecure => 'secure';
   static String get strInsecure => 'insecure';
@@ -98,6 +105,11 @@ class ConnectionType {
 
   void setStreamType(String v) {
     _stream_type.value = v;
+  }
+
+  void setConnRoute(String rendezvousServer, String relayServer) {
+    _rendezvousServer.value = rendezvousServer;
+    _relayServer.value = relayServer;
   }
 
   bool isValid() {

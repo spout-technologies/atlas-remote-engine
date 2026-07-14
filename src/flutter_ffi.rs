@@ -319,6 +319,23 @@ pub fn session_reconnect(session_id: SessionID, force_relay: bool) {
     session_on_waiting_for_image_dialog_show(session_id);
 }
 
+/// Repoint a live session at a different rendezvous node and reconnect.
+///
+/// Per-session, not global: it writes this session's own `LoginConfigHandler`
+/// (`other_server`), which `Client::_start` prefers over the process-wide
+/// `Config` rendezvous option. Concurrent sessions to other regions in the same
+/// process are therefore unaffected.
+///
+/// Used by the controller-side candidate failover: when the primary node fails
+/// to establish, Flutter walks the ordered `alt` chain from the deep link.
+pub fn session_switch_rendezvous(session_id: SessionID, server: String, key: String) {
+    if let Some(session) = sessions::get_session_by_session_id(&session_id) {
+        session.lc.write().unwrap().switch_rendezvous(server, key);
+        session.reconnect(false);
+    }
+    session_on_waiting_for_image_dialog_show(session_id);
+}
+
 pub fn session_toggle_option(session_id: SessionID, value: String) {
     if let Some(session) = sessions::get_session_by_session_id(&session_id) {
         log::warn!("toggle option {}", &value);

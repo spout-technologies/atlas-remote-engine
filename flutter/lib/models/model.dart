@@ -68,6 +68,10 @@ class CachedPeerData {
   bool secure = false;
   bool direct = false;
   String streamType = '';
+  // Travels with the session when a tab is moved to another window, exactly as
+  // `secure`/`direct` do — otherwise the routing indicator blanks on the move.
+  String rendezvousServer = '';
+  String relayServer = '';
 
   CachedPeerData();
 
@@ -82,6 +86,8 @@ class CachedPeerData {
       'secure': secure,
       'direct': direct,
       'streamType': streamType,
+      'rendezvousServer': rendezvousServer,
+      'relayServer': relayServer,
     });
   }
 
@@ -101,6 +107,9 @@ class CachedPeerData {
       data.secure = map['secure'];
       data.direct = map['direct'];
       data.streamType = map['streamType'];
+      // Additive: tolerate a payload written by an older build.
+      data.rendezvousServer = map['rendezvousServer'] ?? '';
+      data.relayServer = map['relayServer'] ?? '';
       return data;
     } catch (e) {
       debugPrint('Failed to parse CachedPeerData: $e');
@@ -127,6 +136,11 @@ class FfiModel with ChangeNotifier {
   // One-shot guard: automatically retry via relay on the first relay-hint of a
   // connection attempt. Reset on a new session (clear) and on connection_ready.
   bool _relayHintAutoRetried = false;
+  // Ordered rendezvous fallback chain for this session (deep link `alt` param),
+  // and how far down it we have walked. Dart-only: a candidate reaches Rust only
+  // when a switch actually fires, via sessionSwitchRendezvous.
+  List<RendezvousCandidate> _altServers = const [];
+  int _altServerCursor = 0;
   bool _viewOnly = false;
   bool _showMyCursor = false;
   WeakReference<FFI> parent;
@@ -257,6 +271,10 @@ class FfiModel with ChangeNotifier {
     _timer?.cancel();
     _timer = null;
     _relayHintAutoRetried = false;
+    // New session: walk the fallback chain from the top again. (clear() runs only
+    // from the FfiModel ctor and FFI.close(), never mid-session, so this cannot
+    // re-arm a switch that already fired.)
+    _altServerCursor = 0;
     resetRestartReconnectState();
     clearPermissions();
     waitForImageTimer?.cancel();
@@ -275,6 +293,19 @@ class FfiModel with ChangeNotifier {
       connectionType.setSecure(secure);
       connectionType.setDirect(direct);
       connectionType.setStreamType(streamType);
+    } catch (e) {
+      //
+    }
+  }
+
+  /// Which rendezvous/relay node the established session actually used.
+  /// `relayServer` is empty for a direct connection.
+  setConnectionRoute(String peerId, String rendezvousServer, String relayServer) {
+    cachedPeerData.rendezvousServer = rendezvousServer;
+    cachedPeerData.relayServer = relayServer;
+    try {
+      ConnectionTypeState.find(peerId)
+          .setConnRoute(rendezvousServer, relayServer);
     } catch (e) {
       //
     }
@@ -319,6 +350,7 @@ class FfiModel with ChangeNotifier {
     }, sessionId, peerId);
     updatePrivacyMode(data.updatePrivacyMode, sessionId, peerId);
     setConnectionType(peerId, data.secure, data.direct, data.streamType);
+    setConnectionRoute(peerId, data.rendezvousServer, data.relayServer);
     await handlePeerInfo(data.peerInfo, peerId, true);
     for (final element in data.cursorDataList) {
       updateLastCursorId(element);
@@ -351,6 +383,9 @@ class FfiModel with ChangeNotifier {
             evt['direct'] == 'true', evt['stream_type'] ?? '');
         _relayHintAutoRetried = false;
         resetRestartReconnectState();
+      } else if (name == 'connection_route') {
+        setConnectionRoute(peerId, evt['rendezvous_server'] ?? '',
+            evt['relay_server'] ?? '');
       } else if (name == 'switch_display') {
         // switch display is kept for backward compatibility
         handleSwitchDisplay(evt, sessionId, peerId);
@@ -990,6 +1025,15 @@ class FfiModel with ChangeNotifier {
       if (!hasRetry) {
         hasRetry = shouldAutoRetryOnOffline(type, title, text);
       }
+      // Only once the same-node retries are exhausted (hasRetry == false) do we
+      // move to another node — so direct → force-relay retry → candidate[0] → …
+      // stays in that order, and a node that is merely flapping is never
+      // abandoned prematurely.
+      if (!hasRetry &&
+          _tryNextRendezvousCandidate(
+              sessionId, type, title, text, dialogManager)) {
+        return;
+      }
       showMsgBox(sessionId, type, title, text, link, hasRetry, dialogManager);
     }
   }
@@ -997,6 +1041,82 @@ class FfiModel with ChangeNotifier {
   void resetRestartReconnectState() {
     _restartReconnectDelayTimer?.cancel();
     _restartReconnectDelayTimer = null;
+  }
+
+  /// Seed this session's ordered rendezvous fallback chain (deep link `alt`).
+  /// Empty for a hand-typed id or an old hub — in which case nothing below ever
+  /// fires and behaviour is exactly as before.
+  void setAltServers(String? raw) {
+    _altServers = parseAltServers(raw);
+    _altServerCursor = 0;
+  }
+
+  /// Establishment-class failure: the connection never came up, so trying a
+  /// different rendezvous node is a sane next move.
+  ///
+  /// Deliberately an ALLOWLIST of the errors Rust raises while *setting up* a
+  /// connection (client.rs `_start_inner` / `connect` / `secure_connection`),
+  /// never a denylist. A normal session end, a user-cancelled connect and every
+  /// auth failure ('re-input-password', 'input-password', 'input-2fa' — each of
+  /// which is its own msgbox type and never reaches here anyway) must NOT bounce
+  /// the session to another node: a technician who mistypes a password would
+  /// otherwise be silently moved to another continent.
+  ///
+  /// 'Key mismatch'/'Key overuse' are excluded on purpose — a wrong server key is
+  /// a configuration fault that must be surfaced, not papered over by hopping
+  /// nodes. 'ID does not exist' IS included: on a multi-region fleet that is the
+  /// signature of a device homed on a different node, and it can only fire when
+  /// the hub itself supplied an `alt` chain (a hand-typed id has none).
+  static bool isEstablishmentFailure(String type, String title, String text) {
+    if (type != 'error' || title != 'Connection Error') return false;
+    return text.contains('Failed to connect via rendezvous server') ||
+        text.contains('Failed to connect via relay server') ||
+        text.contains('Failed to make direct connection to remote desktop') ||
+        text.contains('Failed to secure tcp') ||
+        text.contains('Remote desktop is offline') ||
+        text.contains('ID does not exist');
+  }
+
+  /// Advance one step down the fallback chain. Returns true when it has taken
+  /// over the failure (a switch is under way, so the caller must NOT also show
+  /// the error dialog); false when the failure is not establishment-class or the
+  /// chain is exhausted — then the error surfaces exactly as it does today.
+  ///
+  /// Ordering, end to end: direct → the existing one-shot force-relay retry on
+  /// the same node (the 'relay-hint' branch above) → candidate[0] → candidate[1]
+  /// → … → error dialog. The cursor only ever moves forward within a session, so
+  /// the number of switches is bounded by the chain length — this cannot loop.
+  bool _tryNextRendezvousCandidate(SessionID sessionId, String type, String title,
+      String text, OverlayDialogManager dialogManager) {
+    if (!isEstablishmentFailure(type, title, text)) return false;
+    if (_altServerCursor >= _altServers.length) return false;
+
+    final candidate = _altServers[_altServerCursor];
+    _altServerCursor += 1;
+    debugPrint(
+        'Establishment failure ($text) — switching to fallback rendezvous server '
+        '${candidate.server} ($_altServerCursor/${_altServers.length})');
+
+    BotToast.showText(
+      text: '${translate('Trying fallback server…')} ${candidate.server}',
+      duration: Duration(seconds: 3),
+      clickClose: true,
+      onlyOne: true,
+    );
+
+    // Mirror reconnect()'s housekeeping — the FFI below reconnects for us, so we
+    // must not call bind.sessionReconnect as well.
+    parent.target?.inputModel.setRelativeMouseMode(false);
+    bind.sessionSwitchRendezvous(
+      sessionId: sessionId,
+      server: candidate.server,
+      key: candidate.key,
+    );
+    clearPermissions();
+    dialogManager.dismissAll();
+    dialogManager.showLoading(translate('Connecting...'),
+        onCancel: closeConnection);
+    return true;
   }
 
   /// Auto-retry check for "Remote desktop is offline" error.

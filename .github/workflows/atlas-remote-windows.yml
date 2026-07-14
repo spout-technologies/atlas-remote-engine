@@ -30,7 +30,9 @@ env:
   # Fallback for workflow_dispatch; tag builds override this from the tag name
   # (win-vX.Y.Z) in the "Stamp version" step below, which also patches
   # Cargo.toml + pubspec so the in-app About version matches the release.
-  VERSION: "1.5.12"
+  # Keep in step with Cargo.toml, Cargo.lock, flutter/pubspec.yaml and the
+  # macOS workflow's fallback.
+  VERSION: "1.5.22"
 
 jobs:
   generate-bridge:

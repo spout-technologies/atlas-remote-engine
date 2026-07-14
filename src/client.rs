@@ -551,6 +551,9 @@ impl Client {
                             }
                         }
                         signed_id_pk = rr.pk().into();
+                        // Kept for the routing indicator: `rr.relay_server` is moved
+                        // into `create_relay` below.
+                        let used_relay_server = rr.relay_server.clone();
                         let fut = Self::create_relay(
                             &peer,
                             rr.uuid,
@@ -577,6 +580,23 @@ impl Client {
                         log::info!("{:?} used to establish {typ} connection", start.elapsed());
                         let pk =
                             Self::secure_connection(&peer, signed_id_pk, &key, &mut conn).await?;
+                        // Peer-requested relay: this path returns without going through
+                        // `Client::connect`, so record the routing indicator here too.
+                        // "IPv6" means the direct IPv6 punch won the race, not the relay.
+                        {
+                            let lch = interface.get_lch();
+                            let mut lc = lch.write().unwrap();
+                            lc.used_rendezvous_server = if rendezvous_server.is_empty() {
+                                None
+                            } else {
+                                Some(rendezvous_server.clone())
+                            };
+                            lc.used_relay_server = if typ == "IPv6" || used_relay_server.is_empty() {
+                                None
+                            } else {
+                                Some(used_relay_server)
+                            };
+                        }
                         return Ok((
                             (conn, typ == "IPv6", pk, kcp, typ),
                             (feedback, rendezvous_server),
@@ -736,6 +756,23 @@ impl Client {
             } else {
                 bail!("Failed to make direct connection to remote desktop");
             }
+        }
+        // Record the nodes this round actually used, now that the direct-vs-relay
+        // decision is final. Rendezvous is always recorded; the relay only when
+        // the connection is in fact relayed (`direct` is only cleared above).
+        {
+            let lch = interface.get_lch();
+            let mut lc = lch.write().unwrap();
+            lc.used_rendezvous_server = if rendezvous_server.is_empty() {
+                None
+            } else {
+                Some(rendezvous_server.to_owned())
+            };
+            lc.used_relay_server = if direct || relay_server.is_empty() {
+                None
+            } else {
+                Some(relay_server.to_owned())
+            };
         }
         let mut conn = conn?;
         log::info!(
@@ -1755,6 +1792,12 @@ pub struct LoginConfigHandler {
     switch_back_allowed: bool,
     pub save_ab_password_to_recent: bool, // true: connected with ab password
     pub other_server: Option<(String, String, String)>,
+    // Which nodes the *current* connection round actually used. Set by
+    // `Client::connect` (and the peer-requested relay path) once the direct-vs-relay
+    // decision is final; surfaced to the UI so a technician can see the automatic
+    // routing choice. `used_relay_server` is `None` for a direct connection.
+    pub used_rendezvous_server: Option<String>,
+    pub used_relay_server: Option<String>,
     pub custom_fps: Arc<Mutex<Option<usize>>>,
     pub last_auto_fps: Option<usize>,
     pub adapter_luid: Option<i64>,
@@ -1776,6 +1819,59 @@ impl Deref for LoginConfigHandler {
     }
 }
 
+/// Parse a peer id string that may carry an inline rendezvous decoration.
+///
+/// Accepted forms (all upstream-native — this is a straight extraction of the
+/// block that used to live inline in [`LoginConfigHandler::initialize`]):
+///
+/// | input                          | meaning                                  |
+/// |--------------------------------|------------------------------------------|
+/// | `123456789`                    | plain id, use the global rendezvous node |
+/// | `123456789/r`                  | plain id, force relay                    |
+/// | `123456789@host`               | id homed on `host`, no key               |
+/// | `123456789@host:21116?key=K`   | id homed on `host:21116` with key `K`    |
+/// | `123456789/r@host?key=K`       | as above, force relay                    |
+/// | `123456789@public`             | the public RustDesk nodes (`RS_PUB_KEY`) |
+///
+/// Returns `(real_id, Some((server, key)) | None, force_relay)`. `force_relay`
+/// is true only when a `/r` (or `\r`) suffix was present and stripped.
+///
+/// Pure by construction: no config I/O and no globals, so it is unit-testable.
+/// The persisted `other-server-key` fallback (used when the parsed key is empty)
+/// stays in `initialize()`, which is the only place that may touch peer config.
+pub(crate) fn parse_peer_decoration(id: &str) -> (String, Option<(String, String)>, bool) {
+    if id.contains("@") {
+        let mut v = id.split("@");
+        let raw_id: &str = v.next().unwrap_or_default();
+        let mut server_key = v.next().unwrap_or_default().split('?');
+        let server = server_key.next().unwrap_or_default();
+        let args = server_key.next().unwrap_or_default();
+        let key = if server == PUBLIC_SERVER {
+            config::RS_PUB_KEY.to_owned()
+        } else {
+            let mut args_map: HashMap<String, &str> = HashMap::new();
+            for arg in args.split('&') {
+                if let Some(kv) = arg.find('=') {
+                    let k = arg[0..kv].to_lowercase();
+                    let v = &arg[kv + 1..];
+                    args_map.insert(k, v);
+                }
+            }
+            let key = args_map.remove("key").unwrap_or_default();
+            key.to_owned()
+        };
+
+        // here we can check <id>/r@server
+        let real_id = crate::ui_interface::handle_relay_id(raw_id).to_string();
+        let force_relay = real_id != raw_id;
+        (real_id, Some((server.to_owned(), key)), force_relay)
+    } else {
+        let real_id = crate::ui_interface::handle_relay_id(id);
+        let force_relay = real_id != id;
+        (real_id.to_owned(), None, force_relay)
+    }
+}
+
 impl LoginConfigHandler {
     /// Initialize the login config handler.
     ///
@@ -1793,42 +1889,18 @@ impl LoginConfigHandler {
         shared_password: Option<String>,
         conn_token: Option<String>,
     ) {
-        let mut id = id;
-        if id.contains("@") {
-            let mut v = id.split("@");
-            let raw_id: &str = v.next().unwrap_or_default();
-            let mut server_key = v.next().unwrap_or_default().split('?');
-            let server = server_key.next().unwrap_or_default();
-            let args = server_key.next().unwrap_or_default();
-            let key = if server == PUBLIC_SERVER {
-                config::RS_PUB_KEY.to_owned()
-            } else {
-                let mut args_map: HashMap<String, &str> = HashMap::new();
-                for arg in args.split('&') {
-                    if let Some(kv) = arg.find('=') {
-                        let k = arg[0..kv].to_lowercase();
-                        let v = &arg[kv + 1..];
-                        args_map.insert(k, v);
-                    }
-                }
-                let key = args_map.remove("key").unwrap_or_default();
-                key.to_owned()
-            };
-
-            // here we can check <id>/r@server
-            let real_id = crate::ui_interface::handle_relay_id(raw_id).to_string();
-            if real_id != raw_id {
-                force_relay = true;
+        let (real_id, other_server, decorated_force_relay) = parse_peer_decoration(&id);
+        force_relay = force_relay || decorated_force_relay;
+        // Only a decorated id repoints `other_server`; a plain id leaves any
+        // previously-set value alone, exactly as the inline block did.
+        let id = match other_server {
+            Some((server, key)) => {
+                let id = format!("{real_id}@{server}");
+                self.other_server = Some((real_id, server, key));
+                id
             }
-            self.other_server = Some((real_id.clone(), server.to_owned(), key));
-            id = format!("{real_id}@{server}");
-        } else {
-            let real_id = crate::ui_interface::handle_relay_id(&id);
-            if real_id != id {
-                force_relay = true;
-                id = real_id.to_owned();
-            }
-        }
+            None => real_id,
+        };
 
         self.id = id;
         self.conn_type = conn_type;
@@ -1869,6 +1941,8 @@ impl LoginConfigHandler {
 
         self.direct = None;
         self.received = false;
+        self.used_rendezvous_server = None;
+        self.used_relay_server = None;
         #[cfg(feature = "flutter")]
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         {
@@ -2046,6 +2120,45 @@ impl LoginConfigHandler {
     pub fn set_direct_failure(&mut self, value: i32) {
         let mut config = self.load_config();
         config.direct_failures = value;
+        self.save_config(config);
+    }
+
+    /// Repoint this session at a different rendezvous node (candidate failover).
+    ///
+    /// `Client::_start` re-reads `other_server` at the top of every connection
+    /// round, so the next `reconnect()` dials the new node with no further
+    /// plumbing.
+    ///
+    /// `id` is private to this module, hence the setter rather than a field poke
+    /// from `flutter.rs`; keeping `id` and `other_server` consistent matters
+    /// because `Interface::get_id()` reads `id` while `_start` dials
+    /// `other_server.0`.
+    pub fn switch_rendezvous(&mut self, server: String, key: String) {
+        let real_id = self
+            .other_server
+            .as_ref()
+            .map(|(real_id, _, _)| real_id.clone())
+            .unwrap_or_else(|| self.id.clone());
+        log::info!("switching rendezvous server for {real_id} to {server}");
+        self.id = format!("{real_id}@{server}");
+        self.other_server = Some((real_id, server, key));
+
+        // Carry this peer's config across to the new node, with the direct-punch
+        // heuristic reset.
+        //
+        // `direct_failures` is per-node (it shortens the punch timeout); the
+        // previous node's failure count would unfairly starve the new node's
+        // direct attempt, and `Client::connect` reads it off the live handler.
+        //
+        // We deliberately do NOT call `set_direct_failure()`: peer config is keyed
+        // on `self.id`, which we have just repointed, so it would LOAD the config
+        // of a peer we have never connected to and `save_config()` would then
+        // install that empty config in memory — dropping this session's saved
+        // password and per-peer options mid-flight. Cloning the live config across
+        // instead keeps them, and leaves the new id's config file in the state a
+        // first-class connection to that node would have produced.
+        let mut config = self.config.clone();
+        config.direct_failures = 0;
         self.save_config(config);
     }
 
@@ -4302,4 +4415,129 @@ async fn udp_nat_connect(
             anyhow!(err)
         })?;
     Ok((res.1, Some(res.0), typ))
+}
+
+#[cfg(test)]
+mod peer_decoration_tests {
+    use super::parse_peer_decoration;
+    use hbb_common::config;
+
+    #[test]
+    fn parse_peer_decoration_plain_id() {
+        let (id, other_server, force_relay) = parse_peer_decoration("123456789");
+        assert_eq!(id, "123456789");
+        assert_eq!(other_server, None);
+        assert!(!force_relay);
+    }
+
+    #[test]
+    fn parse_peer_decoration_plain_id_force_relay() {
+        // `<id>/r` with no server: strip the suffix, force relay, stay on the
+        // globally-configured rendezvous node.
+        let (id, other_server, force_relay) = parse_peer_decoration("123456789/r");
+        assert_eq!(id, "123456789");
+        assert_eq!(other_server, None);
+        assert!(force_relay);
+    }
+
+    #[test]
+    fn parse_peer_decoration_server_no_key() {
+        let (id, other_server, force_relay) = parse_peer_decoration("123456789@relay.atlasos.work");
+        assert_eq!(id, "123456789");
+        assert_eq!(
+            other_server,
+            Some(("relay.atlasos.work".to_owned(), "".to_owned()))
+        );
+        assert!(!force_relay);
+    }
+
+    #[test]
+    fn parse_peer_decoration_server_port_and_key() {
+        let (id, other_server, force_relay) =
+            parse_peer_decoration("123456789@jhb.atlasos.work:21116?key=KEY123");
+        assert_eq!(id, "123456789");
+        assert_eq!(
+            other_server,
+            Some(("jhb.atlasos.work:21116".to_owned(), "KEY123".to_owned()))
+        );
+        assert!(!force_relay);
+    }
+
+    #[test]
+    fn parse_peer_decoration_force_relay_with_server() {
+        // `<id>/r@<server>?key=<K>` — the hub's force-relay deep-link form.
+        let (id, other_server, force_relay) =
+            parse_peer_decoration("123456789/r@jhb.atlasos.work:21116?key=KEY123");
+        assert_eq!(id, "123456789");
+        assert_eq!(
+            other_server,
+            Some(("jhb.atlasos.work:21116".to_owned(), "KEY123".to_owned()))
+        );
+        assert!(force_relay);
+    }
+
+    #[test]
+    fn parse_peer_decoration_public_server_substitutes_rs_pub_key() {
+        // `@public` is a magic server name: the key is always RS_PUB_KEY, and any
+        // key carried in the query string is ignored.
+        let (id, other_server, force_relay) = parse_peer_decoration("123456789@public?key=ignored");
+        assert_eq!(id, "123456789");
+        assert_eq!(
+            other_server,
+            Some(("public".to_owned(), config::RS_PUB_KEY.to_owned()))
+        );
+        assert!(!force_relay);
+    }
+
+    #[test]
+    fn parse_peer_decoration_empty_key_parses_as_empty() {
+        // No `?key=` at all, and an explicitly empty `?key=`. Both parse to an
+        // empty key; `initialize()` is what falls back to the persisted
+        // `other-server-key` peer option, so nothing here touches config.
+        for id_str in [
+            "123456789@jhb.atlasos.work",
+            "123456789@jhb.atlasos.work?key=",
+        ] {
+            let (id, other_server, force_relay) = parse_peer_decoration(id_str);
+            assert_eq!(id, "123456789");
+            let (server, key) = other_server.expect("server should parse");
+            assert_eq!(server, "jhb.atlasos.work");
+            assert!(key.is_empty(), "key should be empty for {id_str}");
+            assert!(!force_relay);
+        }
+    }
+
+    #[test]
+    fn parse_peer_decoration_base64_key_with_plus_slash_and_padding() {
+        // A real base64 pubkey can contain `+`, `/` and trailing `=`. The hub
+        // percent-encodes those for the URI; Dart's `Uri.queryParameters` decodes
+        // them back before folding the key into `id?key=<K>`, so what reaches this
+        // parser is the raw base64. It must survive verbatim — in particular the
+        // trailing `=` must not be eaten by the `k=v` split, which cuts on the
+        // FIRST `=` only.
+        let key = "a+b/cDE9fGh=";
+        let (id, other_server, force_relay) =
+            parse_peer_decoration(&format!("123456789@jhb.atlasos.work:21116?key={key}"));
+        assert_eq!(id, "123456789");
+        assert_eq!(
+            other_server,
+            Some(("jhb.atlasos.work:21116".to_owned(), key.to_owned()))
+        );
+        assert!(!force_relay);
+
+        // A full-length 32-byte base64 key (44 chars, `=`-padded).
+        let key = "XU1zOo6SpZYfNGlsb3iMNRaEHEDYLsgEirPgI6VNt8c=";
+        let (_, other_server, _) =
+            parse_peer_decoration(&format!("123456789@jhb.atlasos.work?key={key}"));
+        assert_eq!(other_server.map(|(_, k)| k), Some(key.to_owned()));
+    }
+
+    #[test]
+    fn parse_peer_decoration_key_survives_extra_query_args() {
+        // Unknown args are ignored, and `key` is found wherever it sits.
+        let (_, other_server, _) = parse_peer_decoration(
+            "123456789@jhb.atlasos.work:21116?password=hunter2&key=KEY123&alt=x",
+        );
+        assert_eq!(other_server.map(|(_, k)| k), Some("KEY123".to_owned()));
+    }
 }

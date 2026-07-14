@@ -1606,7 +1606,24 @@ void connectInPeerTab(BuildContext context, Peer peer, PeerTabIndex tab,
       }
     }
   }
-  connect(context, peer.id,
+  // Route the session to the peer's home rendezvous node when the address book
+  // publishes one, by decorating the id as `<id>@<server>?key=<K>`. Rust's
+  // LoginConfigHandler.other_server makes that PER-SESSION, so a JHB peer and an
+  // EU peer can be open side by side in the same process.
+  //
+  // LOAD-BEARING: fleet UUIDs are left undecorated. connect() discriminates them
+  // with isFleetDeviceId() and hands them to the governed web flow; a decorated
+  // UUID no longer matches that regex, so a governed device would start dialling
+  // directly instead — bypassing consent/approval/audit.
+  //
+  // The AB key arrives as already-decoded JSON (raw base64), so it is NOT
+  // percent-decoded here — only the URI deep-link path needs encoding.
+  var connectId = peer.id;
+  if (!isFleetDeviceId(peer.id) && peer.rendezvousServer.isNotEmpty) {
+    connectId = '${peer.id}@${peer.rendezvousServer}'
+        '${peer.rendezvousKey.isNotEmpty ? '?key=${peer.rendezvousKey}' : ''}';
+  }
+  connect(context, connectId,
       password: password,
       isSharedPassword: isSharedPassword,
       isFileTransfer: isFileTransfer,

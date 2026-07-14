@@ -1682,6 +1682,9 @@ pub trait InvokeUiSession: Send + Sync + Clone + 'static + Sized + Default {
     fn close_success(&self);
     fn update_quality_status(&self, qs: QualityStatus);
     fn set_connection_type(&self, is_secured: bool, direct: bool, stream_type: &str);
+    /// Report which rendezvous/relay node the established connection actually used.
+    /// Defaulted to a no-op so the sciter UI needs no change.
+    fn set_conn_route(&self, _rendezvous_server: &str, _relay_server: &str) {}
     fn set_fingerprint(&self, fingerprint: String);
     fn job_error(&self, id: i32, err: String, file_num: i32);
     fn job_done(&self, id: i32, file_num: i32);

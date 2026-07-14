@@ -22,6 +22,13 @@ class Peer {
   String device_group_name;
   String note;
   bool? sameServer;
+  // The peer's home rendezvous node, as published by the hub's address book
+  // (additive, snake_case on the wire like `same_server`). Empty means "use the
+  // client's configured node". Carried into the connect id as
+  // `<id>@<rendezvousServer>?key=<rendezvousKey>` so each session routes itself.
+  // Already-decoded JSON: the key is raw base64, NOT percent-encoded.
+  String rendezvousServer;
+  String rendezvousKey;
 
   String getId() {
     if (alias != '') {
@@ -45,7 +52,9 @@ class Peer {
         loginName = json['loginName'] ?? '',
         device_group_name = json['device_group_name'] ?? '',
         note = json['note'] is String ? json['note'] : '',
-        sameServer = json['same_server'];
+        sameServer = json['same_server'],
+        rendezvousServer = json['rendezvous_server'] ?? '',
+        rendezvousKey = json['rendezvous_key'] ?? '';
 
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
@@ -64,6 +73,8 @@ class Peer {
       'device_group_name': device_group_name,
       'note': note,
       'same_server': sameServer,
+      'rendezvous_server': rendezvousServer,
+      'rendezvous_key': rendezvousKey,
     };
   }
 
@@ -75,6 +86,11 @@ class Peer {
       "platform": platform,
       "alias": alias,
       "tags": tags,
+      // The offline address-book cache serialises through this method, so the
+      // home node must be listed here or it vanishes on restart and the peer
+      // silently falls back to the client's configured rendezvous node.
+      'rendezvous_server': rendezvousServer,
+      'rendezvous_key': rendezvousKey,
     };
     if (includingHash) {
       res['hash'] = hash;
@@ -109,6 +125,10 @@ class Peer {
     required this.device_group_name,
     required this.note,
     this.sameServer,
+    // Optional with an empty default so existing call sites (incl. Peer.loading())
+    // keep compiling.
+    this.rendezvousServer = '',
+    this.rendezvousKey = '',
   });
 
   Peer.loading()
@@ -142,7 +162,11 @@ class Peer {
         rdpUsername == other.rdpUsername &&
         device_group_name == other.device_group_name &&
         loginName == other.loginName &&
-        note == other.note;
+        note == other.note &&
+        // A moved home node must count as a change, or the UI never refreshes
+        // and the cached address book never re-syncs.
+        rendezvousServer == other.rendezvousServer &&
+        rendezvousKey == other.rendezvousKey;
   }
 
   factory Peer.copy(Peer other) {
@@ -161,7 +185,9 @@ class Peer {
         loginName: other.loginName,
         device_group_name: other.device_group_name,
         note: other.note,
-        sameServer: other.sameServer);
+        sameServer: other.sameServer,
+        rendezvousServer: other.rendezvousServer,
+        rendezvousKey: other.rendezvousKey);
     peer.online = other.online;
     return peer;
   }

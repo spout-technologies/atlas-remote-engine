@@ -2347,6 +2347,7 @@ bool handleUriLink({List<String>? cmdArgs, Uri? uri, String? uriString}) {
   String? id;
   String? password;
   String? switchUuid;
+  String? altServers;
   bool? forceRelay;
   for (int i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -2395,6 +2396,10 @@ bool handleUriLink({List<String>? cmdArgs, Uri? uri, String? uriString}) {
         switchUuid = args[i + 1];
         i++;
         break;
+      case '--alt-servers':
+        altServers = args[i + 1];
+        i++;
+        break;
       case '--relay':
         forceRelay = true;
         break;
@@ -2409,6 +2414,7 @@ bool handleUriLink({List<String>? cmdArgs, Uri? uri, String? uriString}) {
           rustDeskWinManager.newRemoteDesktop(id!,
               password: password,
               switchUuid: switchUuid,
+              altServers: altServers,
               forceRelay: forceRelay);
         });
         break;
@@ -2578,10 +2584,57 @@ List<String>? urlLinkToCmdArgs(Uri uri) {
     String? switch_uuid = param["switch_uuid"];
     if (switch_uuid != null) args.addAll(['--switch_uuid', switch_uuid]);
     if (param["relay"] != null) args.add("--relay");
+    // Ordered fallback chain (primary excluded), `host1;key1,host2;key2`.
+    // `Uri.queryParameters` has already percent-decoded it. Engine-local: older
+    // builds simply never emit it, and unknown args are ignored by handleUriLink.
+    String? altServers = param["alt"];
+    if (altServers != null && altServers.isNotEmpty) {
+      args.addAll(['--alt-servers', altServers]);
+    }
     return args;
   }
 
   return null;
+}
+
+/// One entry of the deep link's `alt` fallback chain: a rendezvous node and the
+/// key to reach it with.
+class RendezvousCandidate {
+  final String server;
+  final String key;
+
+  const RendezvousCandidate(this.server, this.key);
+
+  @override
+  String toString() => '$server;$key';
+
+  @override
+  bool operator ==(Object other) =>
+      other is RendezvousCandidate && other.server == server && other.key == key;
+
+  @override
+  int get hashCode => Object.hash(server, key);
+}
+
+/// Parse the `alt` chain — `host1;key1,host2;key2` — preserving hub order.
+///
+/// The value arrives already percent-decoded (`Uri.queryParameters`), so a key
+/// may legitimately contain `+`, `/` and `=`. Only `,` and `;` are structural;
+/// a key is everything after the FIRST `;`. Entries with no host are dropped;
+/// a key is optional (an empty key means "use the client's configured key").
+List<RendezvousCandidate> parseAltServers(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return const [];
+  final out = <RendezvousCandidate>[];
+  for (final entry in raw.split(',')) {
+    final trimmed = entry.trim();
+    if (trimmed.isEmpty) continue;
+    final sep = trimmed.indexOf(';');
+    final server = (sep < 0 ? trimmed : trimmed.substring(0, sep)).trim();
+    final key = sep < 0 ? '' : trimmed.substring(sep + 1).trim();
+    if (server.isEmpty) continue;
+    out.add(RendezvousCandidate(server, key));
+  }
+  return out;
 }
 
 /// Atlas fleet devices are synthesised into the address book with a real
@@ -3388,10 +3441,25 @@ Widget buildErrorBanner(BuildContext context,
       ));
 }
 
+/// Strip the `?key=…` decoration from a peer id, for DISPLAY and PEER-CONFIG
+/// LOOKUP only.
+///
+/// A deep-linked / address-book-homed session dials `<id>@<server>?key=<K>`, and
+/// that decorated string is deliberately the session's identity: it keys the tab,
+/// the Rust SESSIONS map and the GetX per-session state (ConnectionTypeState,
+/// FingerprintState, UnreadChatCountState). Those must NOT be stripped — routing
+/// and dedup depend on them.
+///
+/// What must be stripped is anything a human reads (window title, tab label) and
+/// the peer-config lookups keyed on the bare id (`mainGetPeerSync`,
+/// `mainGetPeerOptionSync`), which would otherwise miss and lose the alias.
+String stripPeerQuery(String id) => id.split('?').first;
+
 String getDesktopTabLabel(String peerId, String alias) {
-  String label = alias.isEmpty ? peerId : alias;
+  final displayId = stripPeerQuery(peerId);
+  String label = alias.isEmpty ? displayId : alias;
   try {
-    String peer = bind.mainGetPeerSync(id: peerId);
+    String peer = bind.mainGetPeerSync(id: displayId);
     Map<String, dynamic> config = jsonDecode(peer);
     if (config['info']['hostname'] is String) {
       String hostname = config['info']['hostname'];

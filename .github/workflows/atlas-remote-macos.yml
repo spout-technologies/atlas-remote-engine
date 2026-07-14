@@ -27,8 +27,9 @@ env:
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
   # Fallback for workflow_dispatch; tag builds override this from the tag name
   # (vX.Y.Z) in the Build step, which also patches Cargo.toml + pubspec so the
-  # in-app About version matches the release.
-  VERSION: "1.5.13"
+  # in-app About version matches the release. Keep in step with Cargo.toml,
+  # Cargo.lock, flutter/pubspec.yaml and the Windows workflow's fallback.
+  VERSION: "1.5.22"
 
 jobs:
   generate-bridge:

@@ -280,8 +280,10 @@ class DesktopTab extends StatefulWidget {
   }) : super(key: key);
 
   static RxString tablabelGetter(String peerId) {
-    final alias = bind.mainGetPeerOptionSync(id: peerId, key: 'alias');
-    return RxString(getDesktopTabLabel(peerId, alias));
+    // Display/lookup only — the tab is still keyed on the decorated id.
+    final displayId = stripPeerQuery(peerId);
+    final alias = bind.mainGetPeerOptionSync(id: displayId, key: 'alias');
+    return RxString(getDesktopTabLabel(displayId, alias));
   }
 
   @override
@@ -329,8 +331,10 @@ class _DesktopTabState extends State<DesktopTab>
   _DesktopTabState() : super();
 
   static RxString tablabelGetter(String peerId) {
-    final alias = bind.mainGetPeerOptionSync(id: peerId, key: 'alias');
-    return RxString(getDesktopTabLabel(peerId, alias));
+    // Display/lookup only — the tab is still keyed on the decorated id.
+    final displayId = stripPeerQuery(peerId);
+    final alias = bind.mainGetPeerOptionSync(id: displayId, key: 'alias');
+    return RxString(getDesktopTabLabel(displayId, alias));
   }
 
   @override

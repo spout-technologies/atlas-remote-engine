@@ -102,6 +102,7 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
           switchUuid: params['switch_uuid'],
           forceRelay: params['forceRelay'],
           isSharedPassword: params['isSharedPassword'],
+          altServers: params['altServers'],
         ),
       ));
       _update_remote_count();
@@ -162,6 +163,17 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
                 connectionType.direct.value == ConnectionType.strDirect;
             String msgConn = getConnectionText(
                 secure, direct, connectionType.stream_type.value);
+            // Which node this session actually routed through. Relayed sessions
+            // name the relay; direct ones name the rendezvous node that brokered
+            // the punch. Silent when the engine did not report a route (older
+            // engine, or a LAN/IP dial that never touched a node).
+            final relayServer = connectionType.relayServer.value;
+            final rendezvousServer = connectionType.rendezvousServer.value;
+            if (relayServer.isNotEmpty) {
+              msgConn += '\n${translate('via relay')} $relayServer';
+            } else if (rendezvousServer.isNotEmpty) {
+              msgConn += '\n${translate('rendezvous')} $rendezvousServer';
+            }
             var msgFingerprint = '${translate('Fingerprint')}:\n';
             var fingerprint = FingerprintState.find(key).value;
             if (fingerprint.isEmpty) {
@@ -480,6 +492,7 @@ class _ConnectionTabPageState extends State<ConnectionTabPage> {
           switchUuid: switchUuid,
           forceRelay: args['forceRelay'],
           isSharedPassword: args['isSharedPassword'],
+          altServers: args['altServers'],
         ),
       ));
     } else if (call.method == kWindowDisableGrabKeyboard) {

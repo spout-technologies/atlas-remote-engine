@@ -744,6 +744,17 @@ impl InvokeUiSession for FlutterHandler {
         );
     }
 
+    fn set_conn_route(&self, rendezvous_server: &str, relay_server: &str) {
+        self.push_event(
+            "connection_route",
+            &[
+                ("rendezvous_server", &rendezvous_server.to_string()),
+                ("relay_server", &relay_server.to_string()),
+            ],
+            &[],
+        );
+    }
+
     fn set_fingerprint(&self, fingerprint: String) {
         self.push_event("fingerprint", &[("fingerprint", &fingerprint)], &[]);
     }

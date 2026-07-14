@@ -185,6 +185,20 @@ impl<T: InvokeUiSession> Remote<T> {
                     .set_connected();
                 self.handler
                     .set_connection_type(peer.is_secured(), direct, stream_type); // flutter -> connection_ready
+                {
+                    // Which nodes this round actually used (set by Client::connect /
+                    // the peer-requested relay path). Empty string = not applicable.
+                    let (used_rendezvous, used_relay) = {
+                        let lc = self.handler.get_lch();
+                        let lc = lc.read().unwrap();
+                        (
+                            lc.used_rendezvous_server.clone().unwrap_or_default(),
+                            lc.used_relay_server.clone().unwrap_or_default(),
+                        )
+                    };
+                    self.handler
+                        .set_conn_route(&used_rendezvous, &used_relay); // flutter -> connection_route
+                }
                 self.handler.update_direct(Some(direct));
                 if conn_type == ConnType::DEFAULT_CONN || conn_type == ConnType::VIEW_CAMERA {
                     self.handler

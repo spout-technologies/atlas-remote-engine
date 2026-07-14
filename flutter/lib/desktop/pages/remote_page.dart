@@ -45,6 +45,7 @@ class RemotePage extends StatefulWidget {
     this.switchUuid,
     this.forceRelay,
     this.isSharedPassword,
+    this.altServers,
   }) : super(key: key) {
     initSharedStates(id);
   }
@@ -59,6 +60,10 @@ class RemotePage extends StatefulWidget {
   final String? switchUuid;
   final bool? forceRelay;
   final bool? isSharedPassword;
+  /// Ordered rendezvous fallback chain (`host1;key1,host2;key2`) for this
+  /// session, from the deep link's `alt` param. Held in Dart only — it reaches
+  /// Rust exclusively via `sessionSwitchRendezvous`, and only if a switch fires.
+  final String? altServers;
   final SimpleWrapper<State<RemotePage>?> _lastState = SimpleWrapper(null);
   final DesktopTabController? tabController;
 
@@ -122,6 +127,9 @@ class _RemotePageState extends State<RemotePage>
   void initState() {
     super.initState();
     _ffi = FFI(widget.sessionId);
+    // Must be set before start(): an establishment failure can arrive as soon as
+    // the first connection round ends.
+    _ffi.ffiModel.setAltServers(widget.altServers);
     Get.put<FFI>(_ffi, tag: widget.id);
     _ffi.imageModel.addCallbackOnFirstImage((String peerId) {
       _ffi.canvasModel.activateLocalCursor();

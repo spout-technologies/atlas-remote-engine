@@ -156,18 +156,21 @@ class RustDeskMultiWindowManager {
       windowController.setInitBackgroundColor(Colors.black);
     }
     final windowId = windowController.windowId;
+    // Window TITLE only — `remoteId` itself stays decorated everywhere else in
+    // this method (it is the session's identity, carried in `msg`).
+    final titleId = stripPeerQuery(remoteId);
     if (!withScreenRect) {
       windowController
         ..setFrame(const Offset(0, 0) &
             Size(1280 + windowId * 20, 720 + windowId * 20))
         ..center()
         ..setTitle(getWindowNameWithId(
-          remoteId,
+          titleId,
           overrideType: type,
         ));
     } else {
       windowController.setTitle(getWindowNameWithId(
-        remoteId,
+        titleId,
         overrideType: type,
       ));
     }
@@ -230,6 +233,7 @@ class RustDeskMultiWindowManager {
     bool? isRDP,
     bool? isSharedPassword,
     String? connToken,
+    String? altServers,
   }) async {
     var params = {
       "type": type.index,
@@ -239,6 +243,11 @@ class RustDeskMultiWindowManager {
     };
     if (switchUuid != null) {
       params['switch_uuid'] = switchUuid;
+    }
+    if (altServers != null && altServers.isNotEmpty) {
+      // Engine-local key: the ordered rendezvous fallback chain for this session.
+      // Older builds simply ignore unknown window params.
+      params['altServers'] = altServers;
     }
     if (isRDP != null) {
       params['isRDP'] = isRDP;
@@ -273,6 +282,7 @@ class RustDeskMultiWindowManager {
     bool? isSharedPassword,
     String? switchUuid,
     bool? forceRelay,
+    String? altServers,
   }) async {
     return await newSession(
       WindowType.RemoteDesktop,
@@ -283,6 +293,7 @@ class RustDeskMultiWindowManager {
       forceRelay: forceRelay,
       switchUuid: switchUuid,
       isSharedPassword: isSharedPassword,
+      altServers: altServers,
     );
   }
 

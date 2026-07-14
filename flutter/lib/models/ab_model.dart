@@ -1255,6 +1255,11 @@ class LegacyAb extends BaseAb {
     p.hostname = r.hostname.isEmpty ? p.hostname : r.hostname;
     p.platform = r.platform.isEmpty ? p.platform : r.platform;
     p.alias = p.alias.isEmpty ? r.alias : p.alias;
+    // The home node is hub-authoritative: overwrite rather than keep-if-nonempty
+    // (unlike alias), so a device that is re-homed to another region — or moved
+    // back to the default node, i.e. cleared — follows the hub on the next sync.
+    p.rendezvousServer = r.rendezvousServer;
+    p.rendezvousKey = r.rendezvousKey;
   }
 
   @override
