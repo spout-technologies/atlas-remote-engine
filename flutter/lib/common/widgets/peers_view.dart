@@ -334,6 +334,15 @@ class _PeersViewState extends State<_PeersView>
 
   var _queryInterval = const Duration(seconds: 20);
 
+  // Atlas fleet peers are projected into the address book with a Postgres UUID
+  // as their id (see isFleetDeviceId), which hbbs has never seen. Sending those
+  // ids to bind.queryOnlines can only ever mark them offline and would clobber
+  // the hub's authoritative `online` (carried on the Peer from the /api/ab
+  // payload). So only real RustDesk peer ids are queried here; fleet peers keep
+  // their server-supplied status. Scheduling still tracks the full _curPeers.
+  List<String> get _queryablePeerIds =>
+      _curPeers.where((id) => !isFleetDeviceId(id)).toList(growable: false);
+
   void _startCheckOnlines() {
     () async {
       final p = await bind.mainIsUsingPublicServer();
@@ -354,8 +363,9 @@ class _PeersViewState extends State<_PeersView>
           final skipIfNotActive = skipIfIsWeb || skipIfMobile || !_isActive;
           if (!skipIfNotActive && (_queryCount < _maxQueryCount || !p)) {
             if (now.difference(_lastQueryTime) >= _queryInterval) {
-              if (_curPeers.isNotEmpty) {
-                bind.queryOnlines(ids: _curPeers.toList(growable: false));
+              final queryable = _queryablePeerIds;
+              if (queryable.isNotEmpty) {
+                bind.queryOnlines(ids: queryable);
                 _lastQueryTime = DateTime.now();
                 _queryCount += 1;
               }
@@ -368,10 +378,13 @@ class _PeersViewState extends State<_PeersView>
   }
 
   _queryOnlines(bool isLoadEvent) {
-    if (_curPeers.isNotEmpty) {
-      bind.queryOnlines(ids: _curPeers.toList(growable: false));
+    final queryable = _queryablePeerIds;
+    if (queryable.isNotEmpty) {
+      bind.queryOnlines(ids: queryable);
       _queryCount = 0;
     }
+    // Keyed on the full _curPeers (incl. fleet ids) so the change-detection in
+    // _startCheckOnlines still fires when visibility changes.
     _lastQueryPeers = {..._curPeers};
     if (isLoadEvent) {
       _lastChangeTime = DateTime.now();

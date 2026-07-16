@@ -1390,9 +1390,13 @@ class LegacyAb extends BaseAb {
     if (isFull()) {
       peers.removeRange(licensedDevices, peers.length);
     }
-    // restore online
+    // restore online — but NOT for Atlas fleet (UUID) peers. hbbs never sees
+    // their ids, so `oldOnlineIDs` is a stale local guess that would flip a
+    // now-offline fleet peer back to online across a refresh. Their status is
+    // authoritative from the hub payload (parsed into Peer.online by
+    // Peer.fromJson); real peers keep the original restore behaviour.
     peers
-        .where((e) => oldOnlineIDs.contains(e.id))
+        .where((e) => !isFleetDeviceId(e.id) && oldOnlineIDs.contains(e.id))
         .map((e) => e.online = true)
         .toList();
     if (data['tag_colors'] is String) {

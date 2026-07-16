@@ -54,7 +54,27 @@ class Peer {
         note = json['note'] is String ? json['note'] : '',
         sameServer = json['same_server'],
         rendezvousServer = json['rendezvous_server'] ?? '',
-        rendezvousKey = json['rendezvous_key'] ?? '';
+        rendezvousKey = json['rendezvous_key'] ?? '' {
+    // Atlas hub address book (/api/ab/*) now carries an authoritative `online`
+    // for each peer. Fleet (UUID) peers can never be resolved by hbbs'
+    // queryOnlines, so this server-supplied flag is the single source of truth
+    // for their status in both the Recent and Address Book tabs. `online` is a
+    // non-final field with a declaration default, so it is set in the body
+    // (Dart forbids initialising such a field in the initializer list).
+    final dynamic o = json['online'];
+    if (o is bool) {
+      online = o;
+    } else if (o is String) {
+      online = o.toLowerCase() == 'true';
+    } else if (o is num) {
+      online = o != 0;
+    }
+    // The additive enrichment keys the hub now sends (score/openTickets/
+    // lastUser/osVersion/clientName/agentStatus/agentVersion) are intentionally
+    // NOT stored on Peer yet: doing so would ripple into equal()/copy()/toJson()
+    // and the equality-driven refresh contract. `online` is the load-bearing
+    // field for requirement #7; the rest are deferred to a follow-up.
+  }
 
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
@@ -287,7 +307,17 @@ class Peers extends ChangeNotifier {
 
     for (var peer in peers) {
       final state = onlineStates[peer.id];
-      peer.online = state != null && state != false;
+      // Only overwrite with the locally-tracked (queryOnlines) snapshot when we
+      // actually have a prior state for this id. Otherwise keep the freshly
+      // loaded `peer.online` — which, for Atlas fleet (UUID) peers, is the
+      // hub's authoritative flag from the address-book payload. hbbs never sees
+      // fleet ids, so the snapshot is stale-offline for them; forcing false
+      // here made the Address Book tab disagree with Recent. This is
+      // behaviourally identical for real peers, which always load online=false
+      // and are refreshed by the queryOnlines callback.
+      if (state != null) {
+        peer.online = state;
+      }
     }
     event = UpdateEvent.load;
     notifyListeners();
