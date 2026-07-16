@@ -214,11 +214,30 @@ jobs:
             AtlasRemote-${{ env.VERSION }}-${{ matrix.job.arch }}.dmg
             AtlasRemote-${{ env.VERSION }}-${{ matrix.job.arch }}.dmg.sha256
 
-      - name: Publish signed DMG to Release (on tag)
-        if: startsWith(github.ref, 'refs/tags/')
+      # NOTE: the per-arch DMG is uploaded as a workflow artifact above; the actual
+      # release is published ONCE by the publish-macos-draft job below (a per-matrix
+      # release step would create DUPLICATE drafts, since draft releases are not
+      # findable by tag for softprops to append to).
+
+  publish-macos-draft:
+    name: Publish macOS DMGs as one draft release
+    needs: [build-for-macOS]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download both-arch signed DMGs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: AtlasRemote-macos-*
+          merge-multiple: true
+      - name: Publish as a single DRAFT release
         uses: softprops/action-gh-release@v2
         with:
+          # DRAFT: the hub does NOT auto-serve drafts to the fleet (only prereleases).
+          # Both arches land in ONE draft here. Hardware-verify, then flip the draft to
+          # Published to release to the fleet (feedback_verify_on_real_hardware).
+          draft: true
           prerelease: true
           files: |
-            AtlasRemote-${{ env.VERSION }}-${{ matrix.job.arch }}.dmg
-            AtlasRemote-${{ env.VERSION }}-${{ matrix.job.arch }}.dmg.sha256
+            AtlasRemote-*.dmg
+            AtlasRemote-*.dmg.sha256

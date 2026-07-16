@@ -177,6 +177,10 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
+          # DRAFT: the hub does NOT auto-serve drafts to the fleet (only prereleases).
+          # Hardware-verify the artifact, then flip the draft to Published to release.
+          # Single-job build, so one softprops call = one draft (no duplication).
+          draft: true
           prerelease: true
           files: |
             AtlasRemote-${{ env.VERSION }}-x86_64-windows-setup.exe
