@@ -318,6 +318,10 @@ class _AddressBookState extends State<AddressBook> {
         child: TextField(
           controller: peerSearchTextController,
           onChanged: (value) => peerSearchText.value = value,
+          // Vertically centre the hint + input within the 32px search chip. Without
+          // this, isDense + a prefixIcon + horizontal-only padding baselines the
+          // placeholder near the top of the container ("floating" hint).
+          textAlignVertical: TextAlignVertical.center,
           // DS .ds-input--sm: 13px; field text = --text-body.
           style: TextStyle(
               fontSize: 13,

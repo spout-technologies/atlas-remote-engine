@@ -1073,6 +1073,8 @@ class FfiModel with ChangeNotifier {
         text.contains('Failed to connect via relay server') ||
         text.contains('Failed to make direct connection to remote desktop') ||
         text.contains('Failed to secure tcp') ||
+        text.contains('Relay refused') ||
+        text.contains('Relay request timeout') ||
         text.contains('Remote desktop is offline') ||
         text.contains('ID does not exist');
   }

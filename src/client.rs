@@ -291,6 +291,15 @@ impl Client {
         } else {
             (peer, "", key, token)
         };
+        // CONSTRAINT: the rendezvous plane must never carry the hub address-book
+        // access_token. Our OPEN OSS hbbs never sends a server-initiated KeyExchange,
+        // so a non-empty token arms secure_tcp() into an 18s deadlock ("Failed to
+        // secure tcp: deadline has elapsed") on every logged-in controller connect —
+        // the intermittent "tcp limit"/connection failure operators report. The
+        // per-session override branch above already zeroes it; force the normal path
+        // to match. The token's only wire consumers (PunchHoleRequest/RequestRelay
+        // .token) are ignored by OSS hbbs regardless, so nothing is lost.
+        let token = "";
         let (rendezvous_server, servers, contained) = if other_server.is_empty() {
             crate::get_rendezvous_server(1_000).await
         } else {
@@ -923,7 +932,10 @@ impl Client {
             {
                 if let Some(rendezvous_message::Union::RelayResponse(rs)) = msg_in.union {
                     if !rs.refuse_reason.is_empty() {
-                        bail!(rs.refuse_reason);
+                        // Prefix so the Flutter failover allowlist (isEstablishmentFailure)
+                        // treats a relay refusal as establishment-class and walks the
+                        // &alt= candidate chain instead of dead-ending in an error dialog.
+                        bail!("Relay refused: {}", rs.refuse_reason);
                     }
                     succeed = true;
                     break;
@@ -931,7 +943,9 @@ impl Client {
             }
         }
         if !succeed {
-            bail!("Timeout");
+            // Distinct, failover-matchable string (see isEstablishmentFailure): all 3
+            // relay-request attempts were exhausted without a RelayResponse.
+            bail!("Relay request timeout");
         }
         Self::create_relay(peer, uuid, relay_server, key, conn_type, ipv4).await
     }
