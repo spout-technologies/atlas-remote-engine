@@ -360,6 +360,15 @@ pub enum Data {
     PrivacyModeState((i32, PrivacyModeState, String)),
     TestRendezvousServer,
     Deployed,
+    /// A5.1 (session snappiness / pre-warm): the co-installed agent injects a
+    /// per-session one-time password (OTP) into an already-running ("standby")
+    /// engine via the `--set-session-otp` CLI verb. The daemon stores it as the
+    /// current temporary password (see `password::set_temporary_password`) so a
+    /// governed session connects instantly instead of cold-spawning the engine.
+    /// Consent still gates whether the peer may actually connect. Additive to the
+    /// upstream protocol; an older binary that doesn't know this variant simply
+    /// fails to deserialize the frame and ignores it.
+    SetSessionOtp(String),
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     Keyboard(DataKeyboard),
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -1162,6 +1171,14 @@ async fn handle(data: Data, stream: &mut Connection) {
                     .await
             );
         }
+        Data::SetSessionOtp(otp) => {
+            // A5.1: store the agent-injected per-session OTP as the current
+            // temporary password so the connect flow (`validate_password`) accepts
+            // it. Called by the co-installed agent at consent time to pre-warm a
+            // standby engine; consent still gates whether the peer may connect.
+            password::set_temporary_password(otp);
+            log::info!("session OTP set via IPC (A5.1 pre-warm)");
+        }
         _ => {}
     };
 }
@@ -1557,6 +1574,14 @@ pub async fn set_config(name: &str, value: String) -> ResultType<()> {
 
 pub fn update_temporary_password() -> ResultType<()> {
     set_config("temporary-password", "".to_owned())
+}
+
+// A5.1: send a per-session OTP to the running ("standby") daemon over main IPC.
+// The daemon stores it as the current temporary password (see the
+// `Data::SetSessionOtp` handler) so a governed session connects without
+// cold-spawning the engine. Mirrors the existing `set_data`-based sender path.
+pub fn set_session_otp(otp: String) -> ResultType<()> {
+    set_data(&Data::SetSessionOtp(otp))
 }
 
 fn apply_permanent_password_storage_and_salt_payload(payload: Option<&str>) -> ResultType<()> {

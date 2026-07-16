@@ -39,6 +39,18 @@ pub fn temporary_password() -> String {
     TEMPORARY_PASSWORD.read().unwrap().clone()
 }
 
+// A5.1 (session snappiness / pre-warm): inject a SPECIFIC per-session one-time
+// password (OTP) as the current temporary password, instead of generating a
+// random one via `update_temporary_password()`. The co-installed agent supplies
+// this at consent time (over IPC, see `Data::SetSessionOtp`) so a governed
+// session can connect to an already-running "standby" engine instantly. Writes
+// the same `TEMPORARY_PASSWORD` the connect flow reads in
+// `validate_password()`, so consent still gates whether the peer may connect.
+// Should only be called in server.
+pub fn set_temporary_password(password: String) {
+    *TEMPORARY_PASSWORD.write().unwrap() = password;
+}
+
 fn verification_method() -> VerificationMethod {
     let method = Config::get_option("verification-method");
     if method == "use-temporary-password" {

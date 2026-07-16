@@ -458,6 +458,25 @@ pub fn core_main() -> Option<Vec<String>> {
                 }
             }
             return None;
+        } else if args[0] == "--set-session-otp" {
+            // A5.1 (session snappiness / pre-warm): the co-installed agent injects a
+            // per-session one-time password (OTP) into an already-running ("standby")
+            // engine at consent time, so a governed session connects instantly instead
+            // of cold-spawning the engine. The OTP is stored as the current temporary
+            // password (the same field the connect flow's validate_password() reads).
+            // Consent still gates connectability — this only pre-seeds the credential.
+            if args.len() == 2 {
+                if crate::platform::is_installed() && is_root() {
+                    if let Err(err) = crate::ipc::set_session_otp(args[1].to_owned()) {
+                        println!("{err}");
+                    } else {
+                        println!("Done!");
+                    }
+                } else {
+                    println!("Installation and administrative privileges required!");
+                }
+            }
+            return None;
         } else if args[0] == "--set-unlock-pin" {
             if config::Config::is_disable_unlock_pin() {
                 println!("Unlock PIN is disabled!");
@@ -928,6 +947,9 @@ fn is_user_main_ipc_scope_cli_command(args: &[String]) -> bool {
             | Some("--option")
             | Some("--assign")
             | Some("--deploy")
+            // A5.1: OTP injection targets the running user `--server` main IPC, so
+            // (like `--password`) it must route through the user main IPC scope.
+            | Some("--set-session-otp")
     )
 }
 
@@ -1229,6 +1251,7 @@ mod tests {
             "--option",
             "--assign",
             "--deploy",
+            "--set-session-otp", // A5.1
         ] {
             assert!(is_user_main_ipc_scope_cli_command(&args(&[command])));
         }
