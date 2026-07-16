@@ -423,6 +423,22 @@ pub fn core_main() -> Option<Vec<String>> {
                 hbb_common::allow_err!(handler.join());
             }
             return None;
+        } else if args[0] == "--standby" {
+            // A5 pre-warm "standby mode": the co-installed agent boots the engine
+            // into a REGISTERED-but-unauthenticatable state so a governed session
+            // connects instantly instead of cold-spawning. See `atlas_enter_standby`
+            // for the full standby → agent-injects-OTP-at-consent → connectable flow.
+            log::info!("start --standby (A5 pre-warm)");
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            atlas_enter_standby();
+            // Register with the rendezvous exactly as `run_atlas_headless` does —
+            // headless, no tray. This makes the engine reachable/pre-warmed while the
+            // credential state set above keeps every inbound peer out until the agent
+            // injects the per-session OTP via `--set-session-otp` at consent time.
+            #[cfg(windows)]
+            crate::privacy_mode::restore_reg_connectivity(true, false);
+            crate::start_server(true, false);
+            return None;
         } else if args[0] == "--import-config" {
             if args.len() == 2 {
                 let filepath;
@@ -976,6 +992,63 @@ fn parse_silent_install_args(args: &[String]) -> (Option<bool>, bool) {
     }
 
     (printer_override, debug)
+}
+
+// ── A5 pre-warm "standby mode" ───────────────────────────────────────────────
+/// Put THIS engine process into a REGISTERED-but-unauthenticatable state. The
+/// caller (`--standby`) then starts the server so it registers with the
+/// rendezvous (hbbs) and is reachable/pre-warmed. It becomes connectable ONLY
+/// after the co-installed agent injects a per-session OTP via `--set-session-otp`
+/// at consent time — this removes cold-spawn latency for governed sessions.
+///
+/// Standby → agent-injects-OTP-at-consent → connectable:
+///   1. The agent boots the engine with `--standby`; it registers with hbbs, but
+///      no credential can authenticate an inbound connect (temporary password is
+///      cleared, permanent-password auth is disabled, direct-IP server is off).
+///   2. A governed session reaches CONSENT. Only AFTER consent does the agent run
+///      `--set-session-otp <otp>`, which stores the OTP as the current temporary
+///      password (`Data::SetSessionOtp` → `password_security::set_temporary_password`).
+///   3. The hub-authorised operator connects with that OTP; the temporary-password
+///      branch of `Connection::validate_password()` accepts it. CONSENT still gates
+///      connectability — the OTP is injected only after the governed consent, never
+///      before, so standby on its own can never admit a peer.
+///
+/// Gating is done entirely via first-class config options and the in-memory
+/// credential state — the auth-path code in `src/server/connection.rs` is
+/// UNCHANGED (deliberately; see the permanent-password note below):
+///   • `verification-method = "use-temporary-password"` makes
+///     `password_security::permanent_enabled()` return false, so
+///     `validate_password()` never enters the permanent/preset-password branch.
+///     This is the clean, low-risk permanent-password gate. (A stricter,
+///     process-scoped hard gate — refusing the permanent path even when the option
+///     is flipped back — would live at the top of `Connection::validate_password()`
+///     in `src/server/connection.rs`, keyed off a standby flag. That touches the
+///     auth path and is intentionally NOT done here.)
+///   • The auto-generated temporary password is cleared to "", so
+///     `validate_password_plain("")` returns false and the temporary branch rejects
+///     every peer until the agent injects the OTP.
+///   • `direct-server = "N"` disables the direct-IP listener, forcing inbound
+///     connections through the governed rendezvous/relay path (belt-and-braces;
+///     `direct-server` already defaults off).
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn atlas_enter_standby() {
+    // Permanent-password gate: restrict auth to the temporary-password channel,
+    // which is exactly the field `--set-session-otp` writes. `permanent_enabled()`
+    // now returns false, so `validate_password()` cannot fall through to a stored
+    // permanent/preset password.
+    crate::ui_interface::set_option(
+        "verification-method".into(),
+        "use-temporary-password".into(),
+    );
+    // Direct-IP server off: connections must arrive via the rendezvous/relay the
+    // agent governs, not a raw inbound TCP listener.
+    crate::ui_interface::set_option("direct-server".into(), "N".into());
+    // Clear the auto-generated temporary password so NO credential authenticates
+    // until the agent injects the per-session OTP at consent time.
+    hbb_common::password_security::set_temporary_password("".to_string());
+    log::info!(
+        "atlas standby: registered-but-unauthenticatable — awaiting per-session OTP via --set-session-otp (consent-gated)"
+    );
 }
 
 // ── Task 9: Atlas headless controlled-session entry point ────────────────────
