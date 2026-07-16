@@ -111,6 +111,12 @@ pub struct VideoQoS {
     adjust_ratio_instant: Instant,
     abr_config: bool,
     new_user_instant: Instant,
+    // A5.2 (session snappiness): true while a freshly-opened connection is in its
+    // first-seconds speed ramp. The ramp starts the stream at the lower BR_SPEED
+    // ratio for a faster time-to-first-frame, then reverts to the default
+    // BR_BALANCED after ~2s or the first good TestDelay. Only the INITIAL ratio is
+    // affected; codec negotiation, delay-adaptation math and FPS logic are unchanged.
+    speed_ramp: bool,
 }
 
 impl Default for VideoQoS {
@@ -124,6 +130,7 @@ impl Default for VideoQoS {
             adjust_ratio_instant: Instant::now(),
             abr_config: true,
             new_user_instant: Instant::now(),
+            speed_ramp: false, // A5.2
         }
     }
 }
@@ -187,6 +194,16 @@ impl VideoQoS {
         self.users.insert(id, UserData::default());
         self.abr_config = Config::get_option("enable-abr") != "N";
         self.new_user_instant = Instant::now();
+        // A5.2: first-seconds QoS ramp. For a fresh connection (this is the only
+        // user), start the stream at the lower BR_SPEED ratio so the first frame
+        // arrives faster, then hand back to the default BR_BALANCED ratio (see
+        // maybe_end_speed_ramp). Guarded to a single user so we never degrade an
+        // already-established viewer when a second one joins. This touches only the
+        // INITIAL ratio; the delay-adaptation loop below takes over unchanged.
+        if self.users.len() == 1 {
+            self.ratio = BR_SPEED;
+            self.speed_ramp = true;
+        }
     }
 
     // Clean up user session
@@ -234,6 +251,9 @@ impl VideoQoS {
             user.quality = quality;
             // update ratio directly
             self.ratio = self.latest_quality().ratio();
+            // A5.2: an explicit quality choice supersedes the speed ramp; clear it
+            // so a later TestDelay doesn't overwrite the chosen ratio with Balanced.
+            self.speed_ramp = false;
         }
     }
 
@@ -260,12 +280,14 @@ impl VideoQoS {
         let dividend_ms = DELAY_THRESHOLD_150MS * min_fps;
 
         let mut adjust_ratio = false;
+        let mut ramp_good_delay = false; // A5.2: first good TestDelay ends the speed ramp
         if let Some(user) = self.users.get_mut(&id) {
             let delay = delay.max(10);
             let old_avg_delay = user.delay.avg_delay();
             user.delay.add_delay(delay);
             let mut avg_delay = user.delay.avg_delay();
             avg_delay = avg_delay.max(10);
+            ramp_good_delay = avg_delay < DELAY_THRESHOLD_150MS; // A5.2 (read-only)
             let mut fps = self.fps;
 
             // Adaptive FPS adjustment based on network delay:
@@ -326,6 +348,10 @@ impl VideoQoS {
             adjust_ratio = user.delay.fps.is_none();
             user.delay.fps = Some(fps);
         }
+        // A5.2: leave the first-seconds speed ramp once the network proves good
+        // (or the ~2s window elapses), reverting ratio to BR_BALANCED *before* the
+        // normal delay-adaptation runs below, so adaptation starts from the default.
+        self.maybe_end_speed_ramp(ramp_good_delay);
         self.adjust_fps();
         if adjust_ratio && !cfg!(target_os = "linux") {
             //Reduce the possibility of vaapi being created twice
@@ -410,6 +436,20 @@ impl VideoQoS {
             .flatten()
             .unwrap_or((0, Quality::Balanced))
             .1
+    }
+
+    // A5.2: end the initial speed-ramp window and revert to the default Balanced
+    // ratio. Ends as soon as the first TestDelay reports a good network
+    // (delay < DELAY_THRESHOLD_150MS) or after ~2s, whichever comes first. From
+    // that point the normal delay-adaptation loop takes over from BR_BALANCED
+    // exactly as it does today — this does not alter the adaptation math itself.
+    fn maybe_end_speed_ramp(&mut self, good_delay: bool) {
+        if self.speed_ramp
+            && (good_delay || self.new_user_instant.elapsed().as_secs_f32() >= 2.0)
+        {
+            self.speed_ramp = false;
+            self.ratio = BR_BALANCED;
+        }
     }
 
     // Adjust quality ratio based on network delay and screen changes
